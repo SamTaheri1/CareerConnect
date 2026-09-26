@@ -1,4 +1,4 @@
-# SOEN 341
+# CareerConnect
 
 Registration backend update: run `node server.js` and open http://127.0.0.1:4174. No packages or database are required. Test with `node --test tests/registration.test.js`. Accounts are kept in server memory and reset when the server restarts. See [registration setup and task status](docs/registration-backend.md).
 
@@ -29,13 +29,21 @@ Our solution is to create a website called CareerConnect that helps job seekers 
 *We may use other technologies later if we need them as the project develops.*
 
 ## Setup Instructions
-To use the platform:  
 
-•	Get the project from our GitHub repository.  
-•	Open the CareerConnect folder on your computer.  
-•	Install the files or packages needed for the project.  
-•	Run the project.  
-•	Open the website in your browser.  
+To run CareerConnect:
+
+1. Clone the GitHub repository.
+2. Open the CareerConnect folder.
+3. Run `node server.js`.
+4. Open `http://127.0.0.1:4174` in your browser.
+
+No external packages or database are currently required.
+
+To run the registration tests:
+
+`node --test tests/registration.test.js`
+
+Accounts are currently stored in server memory and reset when the server restarts. 
 
 *We can update these steps later once we know exactly which technologies we are using.*
 
