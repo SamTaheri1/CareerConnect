@@ -1,14 +1,14 @@
-# Sprint Planning
+# Sprint 1 Planning
 This is where all risks, priorities, effort estimation, and team capacities are planned.
 
-## Sprint 1 Goal
+## Sprint Goal
 
 For Sprint 1, we are starting the main setup of CareerConnect and implementing the first features of the website.
 We will set up the project on GitHub, divide the work between the team members, and start working on user registration and login, 
 profile management, and resume upload and management. 
 The main goal is to have the basic parts of the website started and working so we can build on them in the next sprints.
 
-## Sprint 1 backLog
+## Sprint backLog
 
 For Sprint 1, we need to get the project organized and start working on the first features of CareerConnect.
 
