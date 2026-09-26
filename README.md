@@ -1,4 +1,4 @@
-# Sprint-1
+# SOEN 341
 
 Registration backend update: run `node server.js` and open http://127.0.0.1:4174. No packages or database are required. Test with `node --test tests/registration.test.js`. Accounts are kept in server memory and reset when the server restarts. See [registration setup and task status](docs/registration-backend.md).
 
