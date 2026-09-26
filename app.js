@@ -345,30 +345,26 @@ function renderDetail(id) {
 function renderAuth(mode) {
   const register = mode === "register";
   shell(
-    `<div class="auth-wrap"><a class="back-link" href="#jobs">${icon("back")} Back to jobs</a><section class="panel"><div class="eyebrow">${register ? "A fresh start" : "Good to see you"}</div><h1>${register ? "Create your account" : "Welcome back."}</h1><p>${register ? "Keep your next opportunity within reach." : "Pick up where you left off."}</p><form id="auth-form" data-mode="${mode}">${register ? '<label>Full name<input name="name" autocomplete="name" required maxlength="80" placeholder="Your name"></label>' : ""}<label>Email address<input name="email" type="email" autocomplete="email" required maxlength="120" placeholder="you@example.com"></label><label>Password<input name="password" type="password" autocomplete="${register ? "new-password" : "current-password"}" required ${register ? 'minlength="8"' : ""} maxlength="128" placeholder="${register ? "At least 8 characters" : "Your password"}"></label>${register ? '<p class="form-heading">I’m here to</p><div class="role-options"><label><input type="radio" name="role" value="seeker" checked> Find a job</label><label><input type="radio" name="role" value="recruiter"> Hire people</label></div>' : ""}<p class="error" id="form-error" role="alert"></p><button class="btn btn-primary wide">${register ? "Create account" : "Log in"} ${icon("arrow")}</button></form><p class="auth-switch">${register ? 'Already have an account? <a href="#login">Log in</a>' : 'New to CareerConnect? <a href="#register">Create an account</a>'}</p></section><p class="hint">Accounts and documents are stored in this browser. Use a password unique to this site.</p></div>`,
+    `<div class="auth-wrap"><a class="back-link" href="#jobs">${icon("back")} Back to jobs</a><section class="panel"><div class="eyebrow">${register ? "A fresh start" : "Good to see you"}</div><h1>${register ? "Create your account" : "Welcome back."}</h1><p>${register ? "Keep your next opportunity within reach." : "Pick up where you left off."}</p><form id="auth-form" data-mode="${mode}">${register ? '<label>Full name<input name="name" autocomplete="name" required maxlength="80" placeholder="Your name"></label>' : ""}<label>Email address<input name="email" type="email" autocomplete="email" required maxlength="120" placeholder="you@example.com"></label><label>Password<input name="password" type="password" autocomplete="${register ? "new-password" : "current-password"}" required ${register ? 'minlength="8"' : ""} maxlength="128" placeholder="${register ? "At least 8 characters" : "Your password"}"></label>${register ? '<p class="form-heading">I’m here to</p><div class="role-options"><label><input type="radio" name="role" value="seeker" checked> Find a job</label><label><input type="radio" name="role" value="recruiter"> Hire people</label></div>' : ""}<p class="error" id="form-error" role="alert"></p><button class="btn btn-primary wide">${register ? "Create account" : "Log in"} ${icon("arrow")}</button></form><p class="auth-switch">${register ? 'Already have an account? <a href="#login">Log in</a>' : 'New to CareerConnect? <a href="#register">Create an account</a>'}</p></section><p class="hint">Test accounts last until the server restarts. Profiles and documents stay in this browser. Use a password unique to this site.</p></div>`,
   );
 }
-async function passwordHash(password, salt) {
-  const key = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(password),
-    "PBKDF2",
-    false,
-    ["deriveBits"],
-  );
-  const bits = await crypto.subtle.deriveBits(
-    {
-      name: "PBKDF2",
-      salt: new TextEncoder().encode(salt),
-      iterations: 100000,
-      hash: "SHA-256",
-    },
-    key,
-    256,
-  );
-  return Array.from(new Uint8Array(bits), (byte) =>
-    byte.toString(16).padStart(2, "0"),
-  ).join("");
+async function authenticate(mode, values) {
+  let response;
+  try {
+    response = await fetch(`/api/${mode}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(values),
+    });
+  } catch {
+    throw new Error("Cannot reach the server. Start it with node server.js and open http://127.0.0.1:4174.");
+  }
+  if (!response.headers.get("content-type")?.includes("application/json")) {
+    throw new Error("Open the website through the Node server at http://127.0.0.1:4174.");
+  }
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.message || "Unable to sign in. Please try again.");
+  return result.user;
 }
 function renderProfile() {
   const person = user();
@@ -573,42 +569,21 @@ async function handleSubmit(form) {
     return;
   }
   if (form.id === "auth-form") {
-    const email = values.email.trim().toLowerCase();
-    if (form.dataset.mode === "register") {
-      if (!values.name.trim()) throw new Error("Please enter your name.");
-      if (db.users.some((person) => person.email === email))
-        throw new Error(
-          "An account with this email already exists. Please log in.",
-        );
-      const salt = uid();
-      const password = await passwordHash(values.password, salt);
-      const person = {
-        id: uid(),
-        name: values.name.trim(),
-        email,
-        salt,
-        password,
-        role: values.role,
-        profile: {},
-        resumes: [],
-        saved: [],
-      };
+    const mode = form.dataset.mode;
+    if (mode === "register" && !values.name.trim()) throw new Error("Please enter your name.");
+    const account = await authenticate(mode, values);
+    let person = db.users.find((item) => item.id === account.id);
+    if (!person) {
+      person = { ...account, profile: {}, resumes: [], saved: [] };
       db.users.push(person);
-      persist();
-      setSession(person.id);
-      navigate("profile");
-      toast("Your account is ready. Make yourself at home.");
-    } else {
-      const person = db.users.find((person) => person.email === email);
-      if (
-        !person ||
-        (await passwordHash(values.password, person.salt)) !== person.password
-      )
-        throw new Error("The email or password is incorrect.");
-      setSession(person.id);
-      navigate(person.role === "recruiter" ? "postings" : "jobs");
-      toast("Welcome back, " + person.name.split(" ")[0] + ".");
     }
+    // Cache public details only for the existing frontend workflows.
+    delete person.password;
+    delete person.salt;
+    persist();
+    setSession(person.id);
+    navigate(mode === "register" ? "profile" : person.role === "recruiter" ? "postings" : "jobs");
+    toast(mode === "register" ? "Your account is ready. Make yourself at home." : "Welcome back, " + person.name.split(" ")[0] + ".");
   } else if (form.id === "profile-form") {
     if (!values.name.trim()) throw new Error("Please enter your name.");
     if (values.website && !/^https?:\/\//i.test(values.website))

@@ -1,4 +1,7 @@
 # Sprint-1
+
+Registration backend update: run `node server.js` and open http://127.0.0.1:4174. No packages or database are required. Test with `node --test tests/registration.test.js`. Accounts are kept in server memory and reset when the server restarts. See [registration setup and task status](docs/registration-backend.md).
+
 Project description 
 CareerConnect is a website made to help people stay organized while looking for a job. Instead of having job applications, resumes, and updates all over the place, users can keep everything together on one website. They will be able to make a profile, upload their resume, look for jobs, apply, and see what is happening with each application. Recruiters can also post jobs and look through the applications they receive. The main idea is to make job searching easier to keep track of and less messy.
 
