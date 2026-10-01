@@ -345,24 +345,30 @@ function renderDetail(id) {
 function renderAuth(mode) {
   const register = mode === "register";
   shell(
-    `<div class="auth-wrap"><a class="back-link" href="#jobs">${icon("back")} Back to jobs</a><section class="panel"><div class="eyebrow">${register ? "A fresh start" : "Good to see you"}</div><h1>${register ? "Create your account" : "Welcome back."}</h1><p>${register ? "Keep your next opportunity within reach." : "Pick up where you left off."}</p><form id="auth-form" data-mode="${mode}">${register ? '<label>Full name<input name="name" autocomplete="name" required maxlength="80" placeholder="Your name"></label>' : ""}<label>Email address<input name="email" type="email" autocomplete="email" required maxlength="120" placeholder="you@example.com"></label><label>Password<input name="password" type="password" autocomplete="${register ? "new-password" : "current-password"}" required ${register ? 'minlength="8"' : ""} maxlength="128" placeholder="${register ? "At least 8 characters" : "Your password"}"></label>${register ? '<p class="form-heading">I’m here to</p><div class="role-options"><label><input type="radio" name="role" value="seeker" checked> Find a job</label><label><input type="radio" name="role" value="recruiter"> Hire people</label></div>' : ""}<p class="error" id="form-error" role="alert"></p><button class="btn btn-primary wide">${register ? "Create account" : "Log in"} ${icon("arrow")}</button></form><p class="auth-switch">${register ? 'Already have an account? <a href="#login">Log in</a>' : 'New to CareerConnect? <a href="#register">Create an account</a>'}</p></section><p class="hint">Test accounts last until the server restarts. Profiles and documents stay in this browser. Use a password unique to this site.</p></div>`,
+    `<div class="auth-wrap"><a class="back-link" href="#jobs">${icon("back")} Back to jobs</a><section class="panel"><div class="eyebrow">${register ? "A fresh start" : "Good to see you"}</div><h1>${register ? "Create your account" : "Welcome back."}</h1><p>${register ? "Keep your next opportunity within reach." : "Pick up where you left off."}</p><form id="auth-form" data-mode="${mode}">${register ? '<label>Full name<input name="name" autocomplete="name" required maxlength="80" placeholder="Your name"></label>' : ""}<label>Email address<input name="email" type="email" autocomplete="email" required maxlength="120" placeholder="you@example.com"></label><label>Password<input name="password" type="password" autocomplete="${register ? "new-password" : "current-password"}" required ${register ? 'minlength="8"' : ""} maxlength="128" placeholder="${register ? "At least 8 characters" : "Your password"}"></label>${register ? '<p class="form-heading">I’m here to</p><div class="role-options"><label><input type="radio" name="role" value="seeker" checked> Find a job</label><label><input type="radio" name="role" value="recruiter"> Hire people</label></div>' : ""}<p class="error" id="form-error" role="alert"></p><button class="btn btn-primary wide">${register ? "Create account" : "Log in"} ${icon("arrow")}</button></form><p class="auth-switch">${register ? 'Already have an account? <a href="#login">Log in</a>' : 'New to CareerConnect? <a href="#register">Create an account</a>'}</p></section><p class="hint">Accounts stay available after the server restarts. Profiles and documents stay in this browser. Use a password unique to this site.</p></div>`,
   );
 }
 async function authenticate(mode, values) {
   let response;
   try {
-    response = await fetch(`/api/${mode}`, {
+    const apiBasePath = window.CareerConnectConfig?.apiBasePath || "/api";
+    response = await fetch(`${apiBasePath}/${mode}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(values),
     });
   } catch {
-    throw new Error("Cannot reach the server. Start it with node server.js and open http://127.0.0.1:4174.");
+    throw new Error("Cannot reach the server. Start it with node server.js and open http://127.0.0.1:3000.");
   }
   if (!response.headers.get("content-type")?.includes("application/json")) {
-    throw new Error("Open the website through the Node server at http://127.0.0.1:4174.");
+    throw new Error("Open the website through the Node server at http://127.0.0.1:3000.");
   }
-  const result = await response.json();
+  let result;
+  try {
+    result = await response.json();
+  } catch {
+    throw new Error("The server sent an invalid response. Please try again.");
+  }
   if (!response.ok) throw new Error(result.message || "Unable to sign in. Please try again.");
   return result.user;
 }

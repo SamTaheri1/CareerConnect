@@ -1,17 +1,27 @@
 const { test, before, after } = require("node:test");
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
 const { createServer } = require("../server");
 
 let server;
 let base;
+let dataDirectory;
+let dataFile;
 const valid = { name: "Alex Candidate", email: "alex@example.com", password: "test-password-123", role: "seeker" };
 
 before(async () => {
-  server = createServer();
+  dataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "careerconnect-test-"));
+  dataFile = path.join(dataDirectory, "users.json");
+  server = createServer({ dataFile });
   await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
   base = `http://127.0.0.1:${server.address().port}`;
 });
-after(() => new Promise(resolve => server.close(resolve)));
+after(async () => {
+  await new Promise(resolve => server.close(resolve));
+  fs.rmSync(dataDirectory, { recursive: true, force: true });
+});
 
 async function post(data, endpoint = "/api/register", origin = base) {
   const response = await fetch(origin + endpoint, {
@@ -93,14 +103,55 @@ test("newly registered account can log in; wrong credentials are rejected", asyn
   assert.equal((await post({ email: "login@example.com", password: "incorrect-password" }, "/api/login")).status, 401);
 });
 
-test("a new server starts empty: no database or persisted accounts", async () => {
-  const fresh = createServer();
+test("accounts persist in the configured JSON file across server instances", async () => {
+  await post({ ...valid, email: "persistent@example.com" });
+  const fresh = createServer({ dataFile });
   await new Promise(resolve => fresh.listen(0, "127.0.0.1", resolve));
   try {
     const origin = `http://127.0.0.1:${fresh.address().port}`;
-    assert.equal((await post({ email: valid.email, password: valid.password }, "/api/login", origin)).status, 401);
-    assert.equal((await post(valid, "/api/register", origin)).status, 201);
+    assert.equal((await post({ email: "persistent@example.com", password: valid.password }, "/api/login", origin)).status, 200);
+    assert.equal((await post({ ...valid, email: "persistent@example.com" }, "/api/register", origin)).status, 409);
   } finally { await new Promise(resolve => fresh.close(resolve)); }
+});
+
+test("stored accounts contain a salt and hash but never the plaintext password", async () => {
+  await post({ ...valid, email: "stored@example.com", password: "stored-password-123" });
+  const saved = JSON.parse(fs.readFileSync(dataFile, "utf8"));
+  const account = saved.users.find(item => item.user.email === "stored@example.com");
+  assert.equal(typeof account.salt, "string");
+  assert.equal(typeof account.passwordHash, "string");
+  assert.equal(JSON.stringify(account).includes("stored-password-123"), false);
+});
+
+test("uses a configured API base path", async () => {
+  const customFile = path.join(dataDirectory, "custom-api-users.json");
+  const configured = createServer({ dataFile: customFile, config: { apiBasePath: "/service/auth" } });
+  await new Promise(resolve => configured.listen(0, "127.0.0.1", resolve));
+  try {
+    const origin = `http://127.0.0.1:${configured.address().port}`;
+    const clientConfig = await (await fetch(origin + "/config.js")).text();
+    assert.match(clientConfig, /"apiBasePath":"\/service\/auth"/);
+    assert.equal((await post(valid, "/service/auth/register", origin)).status, 201);
+    assert.equal((await post(valid, "/api/register", origin)).status, 404);
+  } finally {
+    await new Promise(resolve => configured.close(resolve));
+  }
+});
+
+test("limits repeated failed login attempts", async () => {
+  const throttledFile = path.join(dataDirectory, "throttled-users.json");
+  const throttled = createServer({ dataFile: throttledFile, config: { authMaxAttempts: 2, authWindowMs: 60000 } });
+  await new Promise(resolve => throttled.listen(0, "127.0.0.1", resolve));
+  try {
+    const origin = `http://127.0.0.1:${throttled.address().port}`;
+    await post({ ...valid, email: "limited@example.com" }, "/api/register", origin);
+    const credentials = { email: "limited@example.com", password: "wrong-password" };
+    assert.equal((await post(credentials, "/api/login", origin)).status, 401);
+    assert.equal((await post(credentials, "/api/login", origin)).status, 401);
+    assert.equal((await post(credentials, "/api/login", origin)).status, 429);
+  } finally {
+    await new Promise(resolve => throttled.close(resolve));
+  }
 });
 
 test("serves the frontend but never exposes server source", async () => {
