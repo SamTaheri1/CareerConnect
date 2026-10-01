@@ -44,3 +44,7 @@ Additional PDF features included: saved jobs, application history, and in-page d
 6. Team-owned submission deliverables: membership, GitHub board and assignments, planning and capacity, meeting minutes, review workflow, actual contribution records, personal AI-use PDF reports, and cover/submission document.
 
 These items are not marked complete by the frontend implementation.
+
+## Proposed additional feature awaiting team confirmation
+
+An application preparation checklist is available on an open job’s detail page for signed-in job seekers. It lets the seeker mark four preparation steps for that specific job and stores the selections in existing browser local storage. This is a proposed feature only: the team must confirm that it is team-generated, record that decision, and create its corresponding GitHub issue before representing it as the required original feature.

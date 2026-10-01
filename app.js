@@ -130,6 +130,18 @@ function logo(job) {
 function empty(title, message, action = "") {
   return `<div class="empty">${icon("briefcase")}<h3>${title}</h3><p>${message}</p>${action}</div>`;
 }
+const preparationSteps = [
+  ["resume", "Tailor your resume to this role"],
+  ["profile", "Check that your profile and contact details are current"],
+  ["requirements", "Review the role requirements"],
+  ["note", "Write a short note for the hiring team"],
+];
+function preparationChecklist(jobId) {
+  const person = user();
+  if (!person || person.role !== "seeker") return "";
+  const completed = person.preparationChecklists?.[jobId] || [];
+  return `<section class="preparation-checklist" aria-labelledby="checklist-title"><div><p class="eyebrow">Application preparation</p><h2 id="checklist-title">Before you apply</h2><p class="hint">${completed.length} of ${preparationSteps.length} complete. This list is saved in this browser for this job.</p></div><fieldset>${preparationSteps.map(([key, label]) => `<label class="check"><input type="checkbox" data-action="toggle-checklist" data-id="${jobId}" data-step="${key}" ${completed.includes(key) ? "checked" : ""}><span>${e(label)}</span></label>`).join("")}</fieldset></section>`;
+}
 let filters = {
   query: "",
   location: "",
@@ -345,7 +357,7 @@ function renderDetail(id) {
     (app) => app.jobId === id && app.userId === person?.id,
   );
   shell(
-    `<a class="back-link" href="#jobs">${icon("back")} Back to jobs</a><div class="detail-layout"><article class="panel detail-copy"><div class="detail-header"><div class="job-top">${logo(job)}<div><strong>${e(job.company)}</strong><div class="posted">${posted(job.createdAt)}</div></div></div><h1>${e(job.title)}</h1><div class="job-meta"><span>${icon("pin")}${e(job.location)}</span><span>${e(job.arrangement)}</span><span>${e(job.type)}</span></div><div class="tags">${job.tags.map((tag) => `<span class="tag">${e(tag)}</span>`).join("")}</div></div><h2>About the role</h2><p class="application-note">${e(job.description)}</p><h2>What you’ll do</h2><ul>${job.responsibilities.map((item) => `<li>${e(item)}</li>`).join("")}</ul><h2>What you’ll bring</h2><ul>${job.requirements.map((item) => `<li>${e(item)}</li>`).join("")}</ul></article><aside><div class="panel"><h2>At a glance</h2><dl class="facts"><div><dt>Annual salary · CAD</dt><dd>${salary(job)}</dd></div><div><dt>Experience</dt><dd>${e(job.level)}</dd></div><div><dt>Field of work</dt><dd>${e(job.category)}</dd></div><div><dt>Apply by</dt><dd>${date(job.deadline)}</dd></div></dl><div class="form-actions">${person?.role === "recruiter" ? (job.ownerId === person.id ? `<a class="btn btn-primary wide" href="#edit-job/${job.id}">Edit posting</a>` : '<span class="hint">Sign in as a job seeker to apply.</span>') : `<button class="btn btn-primary wide" data-action="apply" data-id="${id}" ${applied || !isOpen(job) ? "disabled" : ""}>${applied ? "Application submitted" : !isOpen(job) ? "Applications closed" : "Apply for this job " + icon("arrow")}</button>`}</div>${person?.role !== "recruiter" ? `<button class="btn btn-text wide" data-action="save" data-id="${id}">${icon("bookmark")}${person?.saved?.includes(id) ? "Remove from saved" : "Save for later"}</button>` : ""}${applied ? '<a href="#applications" class="btn btn-text wide">Track your application</a>' : ""}</div></aside></div>`,
+    `<a class="back-link" href="#jobs">${icon("back")} Back to jobs</a><div class="detail-layout"><article class="panel detail-copy"><div class="detail-header"><div class="job-top">${logo(job)}<div><strong>${e(job.company)}</strong><div class="posted">${posted(job.createdAt)}</div></div></div><h1>${e(job.title)}</h1><div class="job-meta"><span>${icon("pin")}${e(job.location)}</span><span>${e(job.arrangement)}</span><span>${e(job.type)}</span></div><div class="tags">${job.tags.map((tag) => `<span class="tag">${e(tag)}</span>`).join("")}</div></div><h2>About the role</h2><p class="application-note">${e(job.description)}</p><h2>What you’ll do</h2><ul>${job.responsibilities.map((item) => `<li>${e(item)}</li>`).join("")}</ul><h2>What you’ll bring</h2><ul>${job.requirements.map((item) => `<li>${e(item)}</li>`).join("")}</ul>${isOpen(job) ? preparationChecklist(job.id) : ""}</article><aside><div class="panel"><h2>At a glance</h2><dl class="facts"><div><dt>Annual salary · CAD</dt><dd>${salary(job)}</dd></div><div><dt>Experience</dt><dd>${e(job.level)}</dd></div><div><dt>Field of work</dt><dd>${e(job.category)}</dd></div><div><dt>Apply by</dt><dd>${date(job.deadline)}</dd></div></dl><div class="form-actions">${person?.role === "recruiter" ? (job.ownerId === person.id ? `<a class="btn btn-primary wide" href="#edit-job/${job.id}">Edit posting</a>` : '<span class="hint">Sign in as a job seeker to apply.</span>') : `<button class="btn btn-primary wide" data-action="apply" data-id="${id}" ${applied || !isOpen(job) ? "disabled" : ""}>${applied ? "Application submitted" : !isOpen(job) ? "Applications closed" : "Apply for this job " + icon("arrow")}</button>`}</div>${person?.role !== "recruiter" ? `<button class="btn btn-text wide" data-action="save" data-id="${id}">${icon("bookmark")}${person?.saved?.includes(id) ? "Remove from saved" : "Save for later"}</button>` : ""}${applied ? '<a href="#applications" class="btn btn-text wide">Track your application</a>' : ""}</div></aside></div>`,
   );
 }
 function renderAuth(mode) {
@@ -591,7 +603,7 @@ async function handleSubmit(form) {
     const account = await authenticate(mode, values);
     let person = db.users.find((item) => item.id === account.id);
     if (!person) {
-      person = { ...account, profile: {}, resumes: [], saved: [] };
+      person = { ...account, profile: {}, resumes: [], saved: [], preparationChecklists: {} };
       db.users.push(person);
     }
     // Cache public details only for the existing frontend workflows.
@@ -922,6 +934,35 @@ document.addEventListener("click", async (event) => {
 });
 document.addEventListener("change", (event) => {
   const input = event.target;
+  if (input.dataset.action === "toggle-checklist") {
+    const person = user();
+    const job = db.jobs.find((item) => item.id === input.dataset.id);
+    const step = input.dataset.step;
+    if (
+      !person ||
+      person.role !== "seeker" ||
+      !job ||
+      !isOpen(job) ||
+      !preparationSteps.some(([key]) => key === step)
+    ) {
+      input.checked = false;
+      toast("This checklist is only available to job seekers for open jobs.");
+      return;
+    }
+    person.preparationChecklists ||= {};
+    const completed = person.preparationChecklists[job.id] || [];
+    person.preparationChecklists[job.id] = input.checked
+      ? [...new Set([...completed, step])]
+      : completed.filter((key) => key !== step);
+    try {
+      persist();
+      renderDetail(job.id);
+    } catch (error) {
+      toast(error.message);
+      renderDetail(job.id);
+    }
+    return;
+  }
   if (input.closest("#filters") && input.type === "checkbox") {
     filters[input.name] = [
       ...document.querySelectorAll(
