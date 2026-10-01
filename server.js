@@ -13,13 +13,13 @@ function json(response, status, body) {
   response.end(JSON.stringify(body));
 }
 
-async function readJsonBody(request) {
+async function readJsonBody(request, maximumBytes) {
   if (request.headers["content-type"]?.split(";", 1)[0].trim() !== "application/json") throw { status: 415, message: "Send the request as application/json." };
   let body = "";
   let size = 0;
   for await (const chunk of request) {
     size += chunk.length;
-    if (size > 8192) throw { status: 413, message: "The request is too large." };
+    if (size > maximumBytes) throw { status: 413, message: "The request is too large." };
     body += chunk.toString("utf8");
   }
   try {
@@ -51,7 +51,7 @@ function createServer(options = {}) {
           response.setHeader("Allow", "POST");
           return json(response, 405, { message: "Use POST for this endpoint." });
         }
-        const result = await handler(await readJsonBody(request), request);
+        const result = await handler(await readJsonBody(request, config.requestMaxBytes), request);
         return json(response, result.status, result);
       }
       if (url.pathname === "/config.js") {

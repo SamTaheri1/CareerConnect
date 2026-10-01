@@ -94,7 +94,7 @@ test("1.8: rejects malformed JSON and non-object bodies", async () => {
 test("1.8: rejects wrong method, content type, and oversized body", async () => {
   assert.equal((await fetch(base + "/api/register")).status, 405);
   assert.equal((await fetch(base + "/api/register", { method: "POST", body: "text" })).status, 415);
-  assert.equal((await post({ ...valid, name: "a".repeat(9000) })).status, 413);
+  assert.equal((await post({ ...valid, name: "a".repeat(40000) })).status, 413);
 });
 
 test("newly registered account can log in; wrong credentials are rejected", async () => {
@@ -168,7 +168,10 @@ test("resume feedback sends validated text to OpenAI without exposing its key", 
     config: { openAiApiKey: "test-key", openAiModel: "test-model" },
     fetch: async (url, options) => {
       requests.push({ url, options });
-      return new Response(JSON.stringify({ output_text: "Strengths\n- Clear skills\n\nImprovements\n- Add outcomes\n\nTailoring\n- Match keywords" }), { status: 200 });
+      return new Response(JSON.stringify({
+        status: "completed",
+        output: [{ content: [{ type: "output_text", text: "Strengths\n- Clear skills" }, { type: "output_text", text: "Improvements\n- Add outcomes\n\nTailoring\n- Match keywords" }] }],
+      }), { status: 200 });
     },
   });
   await new Promise(resolve => feedbackServer.listen(0, "127.0.0.1", resolve));
@@ -181,7 +184,103 @@ test("resume feedback sends validated text to OpenAI without exposing its key", 
     assert.equal(requests[0].url, "https://api.openai.com/v1/responses");
     assert.equal(requests[0].options.headers.Authorization, "Bearer test-key");
     assert.match(requests[0].options.body, /test-model/);
+    assert.match(requests[0].options.body, /"store":false/);
+    assert.match(requests[0].options.body, /"max_output_tokens":700/);
     assert.doesNotMatch(JSON.stringify(result.body), /test-key/);
+  } finally {
+    await new Promise(resolve => feedbackServer.close(resolve));
+  }
+});
+
+test("resume feedback handles an unavailable OpenAI response without exposing provider details", async () => {
+  const feedbackServer = createServer({
+    dataFile: path.join(dataDirectory, "feedback-upstream-users.json"),
+    config: { openAiApiKey: "test-key" },
+    fetch: async () => new Response(JSON.stringify({ error: { message: "provider detail" } }), { status: 429 }),
+  });
+  await new Promise(resolve => feedbackServer.listen(0, "127.0.0.1", resolve));
+  try {
+    const origin = `http://127.0.0.1:${feedbackServer.address().port}`;
+    const result = await post({ resumeText: "Alex Candidate\nSkills: JavaScript" }, "/api/resume-feedback", origin);
+    assert.equal(result.status, 503);
+    assert.match(result.body.message, /temporarily unavailable/i);
+    assert.doesNotMatch(result.body.message, /provider detail|OpenAI/i);
+  } finally {
+    await new Promise(resolve => feedbackServer.close(resolve));
+  }
+});
+
+test("resume feedback handles malformed OpenAI JSON", async () => {
+  const feedbackServer = createServer({
+    dataFile: path.join(dataDirectory, "feedback-malformed-users.json"),
+    config: { openAiApiKey: "test-key" },
+    fetch: async () => new Response("not json", { status: 200, headers: { "Content-Type": "application/json" } }),
+  });
+  await new Promise(resolve => feedbackServer.listen(0, "127.0.0.1", resolve));
+  try {
+    const origin = `http://127.0.0.1:${feedbackServer.address().port}`;
+    const result = await post({ resumeText: "Alex Candidate\nSkills: JavaScript" }, "/api/resume-feedback", origin);
+    assert.equal(result.status, 503);
+    assert.match(result.body.message, /unreadable response/i);
+  } finally {
+    await new Promise(resolve => feedbackServer.close(resolve));
+  }
+});
+
+test("resume feedback handles an OpenAI response with no usable advice", async () => {
+  const feedbackServer = createServer({
+    dataFile: path.join(dataDirectory, "feedback-empty-users.json"),
+    config: { openAiApiKey: "test-key" },
+    fetch: async () => new Response(JSON.stringify({ output: [{ content: [{ type: "refusal", text: "" }] }] }), { status: 200 }),
+  });
+  await new Promise(resolve => feedbackServer.listen(0, "127.0.0.1", resolve));
+  try {
+    const origin = `http://127.0.0.1:${feedbackServer.address().port}`;
+    const result = await post({ resumeText: "Alex Candidate\nSkills: JavaScript" }, "/api/resume-feedback", origin);
+    assert.equal(result.status, 503);
+    assert.match(result.body.message, /no advice/i);
+  } finally {
+    await new Promise(resolve => feedbackServer.close(resolve));
+  }
+});
+
+test("resume feedback rejects an incomplete OpenAI response", async () => {
+  const feedbackServer = createServer({
+    dataFile: path.join(dataDirectory, "feedback-incomplete-users.json"),
+    config: { openAiApiKey: "test-key" },
+    fetch: async () => new Response(JSON.stringify({ status: "incomplete", output: [{ content: [{ type: "output_text", text: "Partial advice" }] }] }), { status: 200 }),
+  });
+  await new Promise(resolve => feedbackServer.listen(0, "127.0.0.1", resolve));
+  try {
+    const origin = `http://127.0.0.1:${feedbackServer.address().port}`;
+    const result = await post({ resumeText: "Alex Candidate\nSkills: JavaScript" }, "/api/resume-feedback", origin);
+    assert.equal(result.status, 503);
+    assert.match(result.body.message, /temporarily unavailable/i);
+  } finally {
+    await new Promise(resolve => feedbackServer.close(resolve));
+  }
+});
+
+test("resume feedback limits repeated requests before calling OpenAI", async () => {
+  let calls = 0;
+  const feedbackServer = createServer({
+    dataFile: path.join(dataDirectory, "feedback-throttled-users.json"),
+    config: { openAiApiKey: "test-key", authMaxAttempts: 2, authWindowMs: 60000 },
+    fetch: async () => {
+      calls += 1;
+      return new Response(JSON.stringify({ output_text: "Strengths\n- Clear skills" }), { status: 200 });
+    },
+  });
+  await new Promise(resolve => feedbackServer.listen(0, "127.0.0.1", resolve));
+  try {
+    const origin = `http://127.0.0.1:${feedbackServer.address().port}`;
+    const request = { resumeText: "Alex Candidate\nSkills: JavaScript" };
+    assert.equal((await post(request, "/api/resume-feedback", origin)).status, 200);
+    assert.equal((await post(request, "/api/resume-feedback", origin)).status, 200);
+    const result = await post(request, "/api/resume-feedback", origin);
+    assert.equal(result.status, 429);
+    assert.match(result.body.message, /too many attempts/i);
+    assert.equal(calls, 2);
   } finally {
     await new Promise(resolve => feedbackServer.close(resolve));
   }

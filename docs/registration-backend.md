@@ -20,13 +20,13 @@ Open the address printed by the server (the default is http://127.0.0.1:3000). U
 
 ## Configuration
 
-The server reads `.env` at startup. Do not commit a local `.env`; use `.env.example` as the documented safe template. `HOST`, `PORT`, `API_BASE_PATH`, `USER_DATA_FILE`, `PASSWORD_SCRYPT_N`, `PASSWORD_KEY_LENGTH`, `AUTH_MAX_ATTEMPTS`, and `AUTH_WINDOW_MS` are configuration values, not hard-coded application settings. Keep the account file outside publicly served files and restrict access to it.
+The server reads `.env` at startup. Do not commit a local `.env`; use `.env.example` as the documented safe template. `HOST`, `PORT`, `API_BASE_PATH`, `USER_DATA_FILE`, `PASSWORD_SCRYPT_N`, `PASSWORD_KEY_LENGTH`, `AUTH_MAX_ATTEMPTS`, `AUTH_WINDOW_MS`, and `REQUEST_MAX_BYTES` are configuration values, not hard-coded application settings. Keep the account file outside publicly served files and restrict access to it.
 
 The browser receives only `API_BASE_PATH` through `/config.js`; it never receives storage paths or password-hashing settings. Restart the server after changing `.env`.
 
 ### Resume feedback configuration
 
-The optional resume-feedback feature calls the OpenAI Responses API from the server. Set `OPENAI_API_KEY` only in the untracked `.env` file and select its model with `OPENAI_MODEL`. The browser sends resume text to the local server, which forwards it to OpenAI only when the user asks for feedback; feedback is not stored by this feature. The API key is never sent to the browser. Test the feature with the team's own API key before demonstrating it.
+The optional resume-feedback feature calls the OpenAI Responses API from the server. Set `OPENAI_API_KEY` only in the untracked `.env` file, select its model with `OPENAI_MODEL`, and set `AI_REQUEST_TIMEOUT_MS` to cap an upstream wait. The browser sends resume text to the local server, which forwards it to OpenAI only when the user asks for feedback; the request explicitly disables OpenAI response storage and the application does not save feedback. The API key is never sent to the browser. Test the feature with the team's own API key before demonstrating it.
 
 ## Task status
 
