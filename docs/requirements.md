@@ -26,8 +26,8 @@ Additional PDF features included: saved jobs, application history, and in-page d
 
 ## Scope decisions
 
-- The requested stack is strictly HTML, CSS, and JavaScript. No frontend framework, server, database service, or API was added.
-- The login and role restrictions demonstrate the workflow locally. They are not production security controls.
+- The interface is written with HTML, CSS, and JavaScript without a frontend framework. A small Node.js server now provides registration and login endpoints and JSON-backed account storage; see `docs/registration-backend.md`.
+- Registration and login have server-side input validation, password hashing, and login throttling. The rest of the product workflows remain browser-local demonstrations: browser role restrictions are not production authorization controls.
 - Salary is annual CAD for every sample and recruiter-created listing, including internships and part-time positions. The form and listing explicitly use annual units.
 - The two roles are selected during registration and cannot be switched on the profile form.
 - Existing applications retain their original submitted profile and resume even after the profile changes.
@@ -39,7 +39,7 @@ Additional PDF features included: saved jobs, application history, and in-page d
 1. Detailed issue descriptions and acceptance criteria. Confirm fields, constraints, and role permissions against these when available.
 2. A real generative-AI feature required by the full project specification. This version does not simulate or claim AI output. Decide the feature and model/service with the team; remote secret credentials must not be placed in frontend JavaScript.
 3. The team's additional original feature and independently generated user stories. Team brainstorming must actually take place; no generated suggestions have been labeled as team-originated work.
-4. Server-side authentication, authorization, shared storage, and secure document delivery if the scope later permits a backend.
+4. Server-side authentication, authorization, shared storage for non-account data, and secure document delivery. The current Node backend persists accounts only; it does not authorize platform workflows.
 5. External deadline notifications if required by later acceptance criteria. Current reminders are visible while using the site.
 6. Team-owned submission deliverables: membership, GitHub board and assignments, planning and capacity, meeting minutes, review workflow, actual contribution records, personal AI-use PDF reports, and cover/submission document.
 

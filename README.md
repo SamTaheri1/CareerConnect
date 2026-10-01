@@ -34,18 +34,17 @@ To run CareerConnect:
 
 1. Clone the GitHub repository.
 2. Open the CareerConnect folder.
-3. Run `node server.js`.
-4. Open `http://127.0.0.1:4174` in your browser.
+3. Copy `.env.example` to `.env` and review the local configuration values.
+4. Run `node server.js`.
+5. Open the address printed by the server. With the example configuration, it is `http://127.0.0.1:3000`.
 
-No external packages or database are currently required.
+Node.js 22 or newer is required. No npm install, external package, or database server is required. The registration backend stores accounts in the JSON file configured by `USER_DATA_FILE`; registered accounts remain available after a server restart.
 
 To run the registration tests:
 
 `node --test tests/registration.test.js`
 
-Accounts are currently stored in server memory and reset when the server restarts. 
-
-*We can update these steps later once we know exactly which technologies we are using.*
+For backend configuration, endpoint behavior, and current limitations, see [registration setup and task status](docs/registration-backend.md).
 
 ## Proposed Features
 We plan to include:  

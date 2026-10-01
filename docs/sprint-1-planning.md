@@ -76,5 +76,31 @@ Our team has four members. Three of us are in Software Engineering and one is in
 Some parts of the project may take us more time because we are still getting used to certain tools and technologies. We are also still learning how to use AI properly, especially how to write better prompts and how to check if the answers it gives us actually make sense.
 We will divide the work based on what each person is more comfortable with and help each other when someone needs it.
 
+## Appendix A — Sprint 1 work-plan table
+
+The repository identifies issues #2–#16 and their story titles in `docs/requirements.md`. It does not record issue assignees, target dates, individual issue priorities, or live GitHub status. Those fields are intentionally marked **Not recorded** rather than guessed; the team must complete them in GitHub and keep this appendix in sync.
+
+| Issue # | Issue title / user story | Type | Responsible member | Target completion date | Priority | Current status |
+| --- | --- | --- | --- | --- | --- | --- |
+| #2 | US 1: User Registration | User story | Not recorded | Not recorded | Not recorded | Not recorded |
+| #3 | US 2: User Login | User story | Not recorded | Not recorded | Not recorded | Not recorded |
+| #4 | US 3: User Logout | User story | Not recorded | Not recorded | Not recorded | Not recorded |
+| #5 | US 4: Create User Profile | User story | Not recorded | Not recorded | Not recorded | Not recorded |
+| #6 | US 5: Edit User Profile | User story | Not recorded | Not recorded | Not recorded | Not recorded |
+| #7 | US 6: Resume Upload | User story | Not recorded | Not recorded | Not recorded | Not recorded |
+| #8 | US 7: Manage Resume | User story | Not recorded | Not recorded | Not recorded | Not recorded |
+| #9 | US 8: Browse Jobs | User story | Not recorded | Not recorded | Not recorded | Not recorded |
+| #10 | US 9: Search Jobs | User story | Not recorded | Not recorded | Not recorded | Not recorded |
+| #11 | US 10: Filter Jobs | User story | Not recorded | Not recorded | Not recorded | Not recorded |
+| #12 | US 11: View Job Details | User story | Not recorded | Not recorded | Not recorded | Not recorded |
+| #13 | US 12: Apply for a Job | User story | Not recorded | Not recorded | Not recorded | Not recorded |
+| #14 | US 13: Track Applications | User story | Not recorded | Not recorded | Not recorded | Not recorded |
+| #15 | US 14: Recruiter Creates Job Posting | User story | Not recorded | Not recorded | Not recorded | Not recorded |
+| #16 | US 15: Recruiter Manages Applications | User story | Not recorded | Not recorded | Not recorded | Not recorded |
+
+### Completion blocker
+
+Complete the **Responsible member**, **Target completion date**, **Priority**, and **Current status** columns from the GitHub issues and project board before submission. Those values cannot be reconstructed reliably from the checked-in files.
+
 
 
