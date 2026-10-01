@@ -24,6 +24,10 @@ The server reads `.env` at startup. Do not commit a local `.env`; use `.env.exam
 
 The browser receives only `API_BASE_PATH` through `/config.js`; it never receives storage paths or password-hashing settings. Restart the server after changing `.env`.
 
+### Resume feedback configuration
+
+The optional resume-feedback feature calls the OpenAI Responses API from the server. Set `OPENAI_API_KEY` only in the untracked `.env` file and select its model with `OPENAI_MODEL`. The browser sends resume text to the local server, which forwards it to OpenAI only when the user asks for feedback; feedback is not stored by this feature. The API key is never sent to the browser. Test the feature with the team's own API key before demonstrating it.
+
 ## Task status
 
 | Task | Before this update | Now |

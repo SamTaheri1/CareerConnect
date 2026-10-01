@@ -5,6 +5,7 @@ const { loadConfig } = require("./config");
 const { UserStore } = require("./user-store");
 const { createLoginHandler } = require("./auth/login");
 const { createRegisterHandler } = require("./auth/register");
+const { createResumeFeedbackHandler } = require("./ai/resume-feedback");
 const { AuthRateLimiter } = require("./rate-limiter");
 
 function json(response, status, body) {
@@ -37,6 +38,7 @@ function createServer(options = {}) {
   const api = {
     [`${config.apiBasePath}/register`]: createRegisterHandler({ store, config }),
     [`${config.apiBasePath}/login`]: createLoginHandler({ store, config, limiter }),
+    [`${config.apiBasePath}/resume-feedback`]: createResumeFeedbackHandler({ config, limiter, fetch: options.fetch }),
   };
   const files = { "/": ["index.html", "text/html"], "/index.html": ["index.html", "text/html"], "/styles.css": ["styles.css", "text/css"], "/data.js": ["data.js", "text/javascript"], "/app.js": ["app.js", "text/javascript"] };
 

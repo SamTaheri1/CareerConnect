@@ -153,6 +153,7 @@ function header(route) {
           ["jobs", "Find jobs"],
           ["applications", "My applications"],
           ["saved", "Saved jobs"],
+          ["resume-feedback", "Resume feedback"],
         ];
   document.querySelector("#navigation").innerHTML = links
     .map(
@@ -189,6 +190,7 @@ function render() {
     candidates: "Applications",
     "new-job": "Post a job",
     "edit-job": "Edit job",
+    "resume-feedback": "Resume feedback",
   };
   document.title = `${names[route] || "Page not found"} · CareerConnect`;
   if (
@@ -196,6 +198,7 @@ function render() {
       "profile",
       "applications",
       "saved",
+      "resume-feedback",
       "postings",
       "candidates",
       "new-job",
@@ -221,7 +224,7 @@ function render() {
     );
     return;
   }
-  if (["applications", "saved"].includes(route) && user()?.role !== "seeker") {
+  if (["applications", "saved", "resume-feedback"].includes(route) && user()?.role !== "seeker") {
     shell(
       empty(
         "For job seekers",
@@ -244,6 +247,9 @@ function render() {
       break;
     case "profile":
       renderProfile();
+      break;
+    case "resume-feedback":
+      renderResumeFeedback();
       break;
     case "saved":
       renderSaved();
@@ -379,6 +385,11 @@ function renderProfile() {
     `<label>${label}<input name="${name}" type="${type}" value="${e(profile[name])}" maxlength="${name === "skills" ? 300 : 160}"></label>`;
   shell(
     `<div class="page-title"><div><div class="eyebrow">A little about you</div><h1>My profile</h1><p>Keep your details ready for your next move.</p></div>${badge(person.role === "recruiter" ? "Recruiter" : "Job seeker")}</div><div class="profile-layout"><section class="panel"><h2>Your details</h2><form id="profile-form"><div class="form-grid"><label>Full name<input name="name" required maxlength="80" autocomplete="name" value="${e(person.name)}"></label><label>Email address<input type="email" value="${e(person.email)}" disabled><span class="hint">Your account email</span></label>${field("Location", "location")}${field("Phone number", "phone", "tel")}${field(person.role === "recruiter" ? "Company" : "Professional headline", person.role === "recruiter" ? "company" : "headline")}${field("Website or portfolio", "website", "url")}<label class="full">${person.role === "recruiter" ? "About your company" : "About you"}<textarea name="bio" maxlength="2000" placeholder="${person.role === "recruiter" ? "Tell candidates about your team." : "A short introduction to your background and interests."}">${e(profile.bio)}</textarea></label>${person.role === "seeker" ? `<label class="full">Skills<input name="skills" value="${e(profile.skills)}" maxlength="300" placeholder="JavaScript, communication, project management"><span class="hint">Separate skills with commas.</span></label>` : ""}</div><p id="form-error" class="error" role="alert"></p><div class="form-actions"><button class="btn btn-primary">Save profile</button><span class="hint">${profile.updatedAt ? "Last updated " + date(profile.updatedAt) : "Your profile hasn’t been saved yet."}</span></div></form></section><aside>${person.role === "seeker" ? `<section class="panel"><h2>My resumes</h2><p class="small">Choose the right resume for each application.</p><div>${(person.resumes || []).map((resume) => `<div class="resume-item">${icon("file")} <strong>${e(resume.name)}</strong><div class="hint">${Math.ceil(resume.size / 1024)} KB · ${date(resume.createdAt)}</div><div class="resume-actions"><button data-action="download-resume" data-id="${resume.id}">Download</button><button data-action="delete-resume" data-id="${resume.id}">Remove</button></div></div>`).join("") || '<p class="small">No resumes uploaded yet.</p>'}</div><form id="resume-form" class="upload"><label for="resume-file">Upload a resume</label><input type="file" id="resume-file" name="resume" accept=".pdf,.doc,.docx" required><div class="hint">PDF, DOC, or DOCX. Up to 5 MB.<br>Maximum 5 resumes.</div><p class="error" id="resume-error" role="alert"></p><button class="btn btn-secondary wide" type="submit">Upload resume</button></form></section>` : '<section class="panel"><h2>Ready to hire?</h2><p class="small">Give candidates a clear picture of the role and your team.</p><a href="#new-job" class="btn btn-primary wide">Post a job</a></section>'}</aside></div>`,
+  );
+}
+function renderResumeFeedback() {
+  shell(
+    `<a class="back-link" href="#profile">${icon("back")} Back to profile</a><div class="page-title"><div><div class="eyebrow">AI resume feedback</div><h1>Make your resume clearer.</h1><p>Paste the text you want reviewed. Your API key stays on the server and the feedback is not saved.</p></div></div><section class="panel"><form id="resume-feedback-form"><label>Target role <span class="hint">(optional)</span><input name="targetRole" maxlength="120" placeholder="e.g. Junior software developer"></label><label class="full">Resume text<textarea name="resumeText" required maxlength="8000" rows="18" placeholder="Paste your resume text here. Do not include information you would not want to send to an AI service."></textarea><span class="hint">Up to 8,000 characters. Review the result and make your own decisions.</span></label><p class="error" role="alert"></p><div class="form-actions"><button class="btn btn-primary">Get feedback ${icon("arrow")}</button></div></form><section id="resume-feedback-result" class="application-note" hidden aria-live="polite"></section></section>`,
   );
 }
 function renderSaved() {
@@ -645,6 +656,30 @@ async function handleSubmit(form) {
     }
     render();
     toast("Resume uploaded.");
+  } else if (form.id === "resume-feedback-form") {
+    if (user()?.role !== "seeker") throw new Error("Resume feedback is available to job seekers.");
+    const apiBasePath = window.CareerConnectConfig?.apiBasePath || "/api";
+    let response;
+    try {
+      response = await fetch(`${apiBasePath}/resume-feedback`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ resumeText: values.resumeText, targetRole: values.targetRole }),
+      });
+    } catch {
+      throw new Error("Resume feedback is temporarily unavailable. Please try again later.");
+    }
+    let result;
+    try {
+      result = await response.json();
+    } catch {
+      throw new Error("Resume feedback returned an unexpected response. Please try again later.");
+    }
+    if (!response.ok) throw new Error(result.message || "Resume feedback is temporarily unavailable. Please try again later.");
+    const output = form.parentElement.querySelector("#resume-feedback-result");
+    output.textContent = result.feedback;
+    output.hidden = false;
+    toast("Your resume feedback is ready.");
   } else if (form.id === "job-form") {
     if (user()?.role !== "recruiter") return;
     for (const key of [

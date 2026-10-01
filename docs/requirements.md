@@ -37,7 +37,7 @@ Additional PDF features included: saved jobs, application history, and in-page d
 ## Still outstanding
 
 1. Detailed issue descriptions and acceptance criteria. Confirm fields, constraints, and role permissions against these when available.
-2. A real generative-AI feature required by the full project specification. This version does not simulate or claim AI output. Decide the feature and model/service with the team; remote secret credentials must not be placed in frontend JavaScript.
+2. The generative-AI requirement is implemented as server-side resume feedback. Before the live demonstration, the team must set `OPENAI_API_KEY` in its untracked `.env`, choose and test the configured model, and document the AI use and validation. The key must never be placed in frontend JavaScript.
 3. The team's additional original feature and independently generated user stories. Team brainstorming must actually take place; no generated suggestions have been labeled as team-originated work.
 4. Server-side authentication, authorization, shared storage for non-account data, and secure document delivery. The current Node backend persists accounts only; it does not authorize platform workflows.
 5. External deadline notifications if required by later acceptance criteria. Current reminders are visible while using the site.

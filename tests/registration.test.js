@@ -154,6 +154,57 @@ test("limits repeated failed login attempts", async () => {
   }
 });
 
+test("resume feedback reports a clear setup error when OpenAI is not configured", async () => {
+  const result = await post({ resumeText: "Alex Candidate\nSkills: JavaScript" }, "/api/resume-feedback");
+  assert.equal(result.status, 503);
+  assert.match(result.body.message, /not configured/i);
+});
+
+test("resume feedback sends validated text to OpenAI without exposing its key", async () => {
+  const requests = [];
+  const feedbackFile = path.join(dataDirectory, "feedback-users.json");
+  const feedbackServer = createServer({
+    dataFile: feedbackFile,
+    config: { openAiApiKey: "test-key", openAiModel: "test-model" },
+    fetch: async (url, options) => {
+      requests.push({ url, options });
+      return new Response(JSON.stringify({ output_text: "Strengths\n- Clear skills\n\nImprovements\n- Add outcomes\n\nTailoring\n- Match keywords" }), { status: 200 });
+    },
+  });
+  await new Promise(resolve => feedbackServer.listen(0, "127.0.0.1", resolve));
+  try {
+    const origin = `http://127.0.0.1:${feedbackServer.address().port}`;
+    const result = await post({ resumeText: "Alex Candidate\nSkills: JavaScript", targetRole: "Junior developer" }, "/api/resume-feedback", origin);
+    assert.equal(result.status, 200);
+    assert.match(result.body.feedback, /Strengths/);
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].url, "https://api.openai.com/v1/responses");
+    assert.equal(requests[0].options.headers.Authorization, "Bearer test-key");
+    assert.match(requests[0].options.body, /test-model/);
+    assert.doesNotMatch(JSON.stringify(result.body), /test-key/);
+  } finally {
+    await new Promise(resolve => feedbackServer.close(resolve));
+  }
+});
+
+test("resume feedback validates its input before calling OpenAI", async () => {
+  let calls = 0;
+  const validationServer = createServer({
+    dataFile: path.join(dataDirectory, "feedback-validation-users.json"),
+    config: { openAiApiKey: "test-key" },
+    fetch: async () => { calls += 1; throw new Error("should not run"); },
+  });
+  await new Promise(resolve => validationServer.listen(0, "127.0.0.1", resolve));
+  try {
+    const origin = `http://127.0.0.1:${validationServer.address().port}`;
+    const result = await post({ resumeText: " " }, "/api/resume-feedback", origin);
+    assert.equal(result.status, 400);
+    assert.equal(calls, 0);
+  } finally {
+    await new Promise(resolve => validationServer.close(resolve));
+  }
+});
+
 test("serves the frontend but never exposes server source", async () => {
   assert.equal((await fetch(base + "/")).status, 200);
   assert.equal((await fetch(base + "/server.js")).status, 404);

@@ -43,6 +43,8 @@ function loadConfig() {
     })(),
     authMaxAttempts: positiveInteger(env.AUTH_MAX_ATTEMPTS, 10),
     authWindowMs: positiveInteger(env.AUTH_WINDOW_MS, 900000),
+    openAiApiKey: env.OPENAI_API_KEY || "",
+    openAiModel: env.OPENAI_MODEL || "gpt-4.1-mini",
   };
 }
 
