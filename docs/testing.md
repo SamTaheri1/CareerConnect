@@ -23,6 +23,12 @@ Passed:
 
 ## Manual regression checklist
 
+Resume preview logic checks: `node --test tests/resume-preview.test.js`.
+For browser verification, upload a PDF and select **Preview** under My profile → My resumes.
+Verify the document displays in the page dialog, Close and Escape dismiss it, and preview still works after reload.
+Check a narrow viewport, a missing stored file, and DOC/DOCX uploads (these show guidance to upload a PDF copy).
+Browsers without a built-in PDF viewer show a download fallback. No external document viewer is used.
+
 1. Register each role; try a duplicate email, empty fields, an invalid email, and a password shorter than eight characters.
 2. Save and edit a profile; reload to verify persistence.
 3. Upload a resume; download it and check its contents. Try an empty file, unsupported extension, renamed invalid file, file over 5 MB, and a sixth resume.
