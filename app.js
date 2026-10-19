@@ -396,7 +396,7 @@ function renderProfile() {
   const field = (label, name, type = "text") =>
     `<label>${label}<input name="${name}" type="${type}" value="${e(profile[name])}" maxlength="${name === "skills" ? 300 : 160}"></label>`;
   shell(
-    `<div class="page-title"><div><div class="eyebrow">A little about you</div><h1>My profile</h1><p>Keep your details ready for your next move.</p></div>${badge(person.role === "recruiter" ? "Recruiter" : "Job seeker")}</div><div class="profile-layout"><section class="panel"><h2>Your details</h2><form id="profile-form"><div class="form-grid"><label>Full name<input name="name" required maxlength="80" autocomplete="name" value="${e(person.name)}"></label><label>Email address<input type="email" value="${e(person.email)}" disabled><span class="hint">Your account email</span></label>${field("Location", "location")}${field("Phone number", "phone", "tel")}${field(person.role === "recruiter" ? "Company" : "Professional headline", person.role === "recruiter" ? "company" : "headline")}${field("Website or portfolio", "website", "url")}<label class="full">${person.role === "recruiter" ? "About your company" : "About you"}<textarea name="bio" maxlength="2000" placeholder="${person.role === "recruiter" ? "Tell candidates about your team." : "A short introduction to your background and interests."}">${e(profile.bio)}</textarea></label>${person.role === "seeker" ? `<label class="full">Skills<input name="skills" value="${e(profile.skills)}" maxlength="300" placeholder="JavaScript, communication, project management"><span class="hint">Separate skills with commas.</span></label>` : ""}</div><p id="form-error" class="error" role="alert"></p><div class="form-actions"><button class="btn btn-primary">Save profile</button><span class="hint">${profile.updatedAt ? "Last updated " + date(profile.updatedAt) : "Your profile hasn’t been saved yet."}</span></div></form></section><aside>${person.role === "seeker" ? `<section class="panel"><h2>My resumes</h2><p class="small">Choose the right resume for each application.</p><div>${(person.resumes || []).map((resume) => `<div class="resume-item">${icon("file")} <strong>${e(resume.name)}</strong><div class="hint">${Math.ceil(resume.size / 1024)} KB · ${date(resume.createdAt)}</div><div class="resume-actions"><button type="button" data-action="preview-resume" data-id="${resume.id}">Preview</button><button data-action="download-resume" data-id="${resume.id}">Download</button><button data-action="delete-resume" data-id="${resume.id}">Remove</button></div></div>`).join("") || '<p class="small">No resumes uploaded yet.</p>'}</div><form id="resume-form" class="upload"><label for="resume-file">Upload a resume</label><input type="file" id="resume-file" name="resume" accept=".pdf,.doc,.docx" required><div class="hint">PDF, DOC, or DOCX. Up to 5 MB.<br>Use PDF for in-page preview.<br>Maximum 5 resumes.</div><p class="error" id="resume-error" role="alert"></p><button class="btn btn-secondary wide" type="submit">Upload resume</button></form></section>` : '<section class="panel"><h2>Ready to hire?</h2><p class="small">Give candidates a clear picture of the role and your team.</p><a href="#new-job" class="btn btn-primary wide">Post a job</a></section>'}</aside></div>`,
+    `<div class="page-title"><div><div class="eyebrow">A little about you</div><h1>My profile</h1><p>Keep your details ready for your next move.</p></div>${badge(person.role === "recruiter" ? "Recruiter" : "Job seeker")}</div><div class="profile-layout"><section class="panel"><h2>Your details</h2><form id="profile-form"><div class="form-grid"><label>Full name<input name="name" required maxlength="80" autocomplete="name" value="${e(person.name)}"></label><label>Email address<input type="email" value="${e(person.email)}" disabled><span class="hint">Your account email</span></label>${field("Location", "location")}${field("Phone number", "phone", "tel")}${field(person.role === "recruiter" ? "Company" : "Professional headline", person.role === "recruiter" ? "company" : "headline")}${field("Website or portfolio", "website", "url")}<label class="full">${person.role === "recruiter" ? "About your company" : "About you"}<textarea name="bio" maxlength="2000" placeholder="${person.role === "recruiter" ? "Tell candidates about your team." : "A short introduction to your background and interests."}">${e(profile.bio)}</textarea></label>${person.role === "seeker" ? `<label class="full">Skills<input name="skills" value="${e(profile.skills)}" maxlength="300" placeholder="JavaScript, communication, project management"><span class="hint">Separate skills with commas.</span></label>` : ""}</div><p id="form-error" class="error" role="alert"></p><div class="form-actions"><button class="btn btn-primary">Save profile</button><span class="hint">${profile.updatedAt ? "Last updated " + date(profile.updatedAt) : "Your profile hasn’t been saved yet."}</span></div></form></section><aside>${person.role === "seeker" ? `<section class="panel"><h2>My resumes</h2><p class="small">Choose the right resume for each application.</p><div>${(person.resumes || []).map((resume) => `<div class="resume-item">${icon("file")} <strong>${e(resume.name)}</strong><div class="hint">${Math.ceil(resume.size / 1024)} KB · ${date(resume.createdAt)}</div><div class="resume-actions"><button type="button" data-action="preview-resume" data-id="${resume.id}">Preview</button><button type="button" data-action="download-resume" data-id="${resume.id}">Download</button><button type="button" data-action="replace-resume" data-id="${resume.id}">Replace</button><button type="button" data-action="delete-resume" data-id="${resume.id}">Remove</button></div></div>`).join("") || '<p class="small">No resumes uploaded yet.</p>'}</div><form id="resume-form" class="upload"><label for="resume-file">Upload a resume</label><input type="file" id="resume-file" name="resume" accept=".pdf,.doc,.docx" required><div class="hint">PDF, DOC, or DOCX. Up to 5 MB.<br>Use PDF for in-page preview.<br>Maximum 5 resumes.</div><p class="error" id="resume-error" role="alert"></p><button class="btn btn-secondary wide" type="submit">Upload resume</button></form></section>` : '<section class="panel"><h2>Ready to hire?</h2><p class="small">Give candidates a clear picture of the role and your team.</p><a href="#new-job" class="btn btn-primary wide">Post a job</a></section>'}</aside></div>`,
   );
 }
 function renderResumeFeedback() {
@@ -542,6 +542,14 @@ function applyModal(id) {
     `<div class="eyebrow">Take the next step</div><h2 id="modal-title">Apply for ${e(job.title)}</h2><p>${e(job.company)} · ${e(job.location)}</p><form id="apply-form" data-id="${id}" class="modal-fields"><label>Your name<input name="name" required maxlength="80" value="${e(person.name)}"></label><label>Contact email<input type="email" name="email" required value="${e(person.email)}"></label><label>Resume<select name="resume" required>${person.resumes.map((resume) => `<option value="${resume.id}">${e(resume.name)}</option>`).join("")}</select></label><label>A note to the hiring team <span class="hint">(optional)</span><textarea name="note" maxlength="2000" placeholder="What interests you about this role?"></textarea></label><p class="hint">Your contact details, profile, and selected resume will be included.</p><p id="form-error" class="error" role="alert"></p><div class="form-actions"><button class="btn btn-primary">Submit application ${icon("arrow")}</button><button type="button" class="btn btn-secondary" data-action="close-modal">Cancel</button></div></form>`,
   );
 }
+function replaceResumeModal(id) {
+  const person = user();
+  const resume = person?.resumes.find((item) => item.id === id);
+  if (person?.role !== "seeker" || !resume) return;
+  openModal(
+    `<h2 id="modal-title">Replace resume</h2><p>Choose a new file to replace <strong>${e(resume.name)}</strong>. Applications already submitted will keep their original copy.</p><form id="replace-resume-form" data-id="${e(id)}" class="modal-fields"><label for="replacement-resume">New resume file<input type="file" id="replacement-resume" name="resume" accept=".pdf,.doc,.docx" required></label><p class="hint">PDF, DOC, or DOCX. Up to 5 MB.</p><p class="error" role="alert"></p><div class="form-actions"><button class="btn btn-primary">Replace resume</button><button type="button" class="btn btn-secondary" data-action="close-modal">Cancel</button></div></form>`,
+  );
+}
 function reviewModal(id) {
   const app = db.applications.find((app) => app.id === id);
   const job = db.jobs.find(
@@ -639,6 +647,28 @@ async function downloadFile(key, name) {
   link.click();
   setTimeout(() => URL.revokeObjectURL(url), 10000);
 }
+async function validateResumeFile(file) {
+  if (!file?.size) throw new Error("Choose a non-empty resume file.");
+  if (!/\.(pdf|doc|docx)$/i.test(file.name))
+    throw new Error("Choose a PDF, DOC, or DOCX file.");
+  if (file.size > 5 * 1024 * 1024)
+    throw new Error("The file is too large. The limit is 5 MB.");
+  const bytes = new Uint8Array(await file.slice(0, 8).arrayBuffer());
+  const ext = file.name.split(".").pop().toLowerCase();
+  const valid =
+    ext === "pdf"
+      ? String.fromCharCode(...bytes.slice(0, 5)) === "%PDF-"
+      : ext === "docx"
+        ? bytes[0] === 0x50 && bytes[1] === 0x4b
+        : bytes[0] === 0xd0 &&
+          bytes[1] === 0xcf &&
+          bytes[2] === 0x11 &&
+          bytes[3] === 0xe0;
+  if (!valid)
+    throw new Error(
+      "The file content does not match its extension. Choose a valid document.",
+    );
+}
 async function handleSubmit(form) {
   const values = Object.fromEntries(new FormData(form));
   if (form.id === "search-form") {
@@ -682,26 +712,7 @@ async function handleSubmit(form) {
       throw new Error(
         "You can keep up to 5 resumes. Remove one before uploading another.",
       );
-    if (!file.size) throw new Error("Choose a non-empty resume file.");
-    if (!/\.(pdf|doc|docx)$/i.test(file.name))
-      throw new Error("Choose a PDF, DOC, or DOCX file.");
-    if (file.size > 5 * 1024 * 1024)
-      throw new Error("The file is too large. The limit is 5 MB.");
-    const bytes = new Uint8Array(await file.slice(0, 8).arrayBuffer());
-    const ext = file.name.split(".").pop().toLowerCase();
-    const valid =
-      ext === "pdf"
-        ? String.fromCharCode(...bytes.slice(0, 5)) === "%PDF-"
-        : ext === "docx"
-          ? bytes[0] === 0x50 && bytes[1] === 0x4b
-          : bytes[0] === 0xd0 &&
-            bytes[1] === 0xcf &&
-            bytes[2] === 0x11 &&
-            bytes[3] === 0xe0;
-    if (!valid)
-      throw new Error(
-        "The file content does not match its extension. Choose a valid document.",
-      );
+    await validateResumeFile(file);
     const id = uid();
     await fileOperation("put", id, file);
     user().resumes.push({
@@ -718,6 +729,37 @@ async function handleSubmit(form) {
     }
     render();
     toast("Resume uploaded.");
+  } else if (form.id === "replace-resume-form") {
+    const person = user();
+    const index = person?.resumes.findIndex(
+      (resume) => resume.id === form.dataset.id,
+    );
+    if (person?.role !== "seeker" || index < 0)
+      throw new Error("This resume is no longer available.");
+    const file = values.resume;
+    await validateResumeFile(file);
+    const previous = person.resumes[index];
+    const previousFile = await fileOperation("get", previous.id);
+    await fileOperation("put", previous.id, file);
+    person.resumes[index] = {
+      id: previous.id,
+      name: file.name,
+      size: file.size,
+      createdAt: new Date().toISOString(),
+    };
+    try {
+      persist();
+    } catch (error) {
+      person.resumes[index] = previous;
+      try {
+        if (previousFile) await fileOperation("put", previous.id, previousFile);
+        else await fileOperation("delete", previous.id);
+      } catch {}
+      throw error;
+    }
+    modal.close();
+    render();
+    toast("Resume replaced.");
   } else if (form.id === "resume-feedback-form") {
     if (user()?.role !== "seeker") throw new Error("Resume feedback is available to job seekers.");
     const apiBasePath = window.CareerConnectConfig?.apiBasePath || "/api";
@@ -946,6 +988,7 @@ document.addEventListener("click", async (event) => {
     } else if (action === "apply") applyModal(id);
     else if (action === "review") reviewModal(id);
     else if (action === "preview-resume") await previewResume(id);
+    else if (action === "replace-resume") replaceResumeModal(id);
     else if (action === "download-resume") {
       const resume = user()?.resumes.find((resume) => resume.id === id);
       if (resume) await downloadFile(id, resume.name);
