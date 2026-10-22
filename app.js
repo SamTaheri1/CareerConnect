@@ -303,7 +303,7 @@ function renderJobs() {
 }
 function filteredJobs() {
   const query = filters.query.trim().toLowerCase();
-  const place = filters.location.trim().toLowerCase();
+ const place = filters.location.trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
   return db.jobs
     .filter(
       (job) =>
@@ -311,7 +311,7 @@ function filteredJobs() {
         `${job.title} ${job.company} ${job.description} ${job.tags.join(" ")}`
           .toLowerCase()
           .includes(query) &&
-        job.location.toLowerCase().includes(place) &&
+       job.location.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().includes(place) &&
         (!filters.types.length || filters.types.includes(job.type)) &&
         (!filters.arrangements.length ||
           filters.arrangements.includes(job.arrangement)) &&
