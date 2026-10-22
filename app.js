@@ -301,29 +301,48 @@ function renderJobs() {
     <aside class="right-rail"><div class="aside-card feature"><div class="feature-symbol">↗</div><h2>Your next move,<br>all in one place.</h2><p>Keep your resume ready and your applications organized.</p><a class="btn" href="#${user() ? "profile" : "register"}">${user() ? "Update your profile" : "Create your profile"} ${icon("arrow")}</a></div><div class="aside-card"><div class="section-label">A SMALL HEAD START</div><h3>Make your application count.</h3><ul><li>Keep your resume up to date.</li><li>Show work you’re proud of.</li><li>Make each application personal.</li></ul></div><p class="aside-note">A new opportunity doesn’t have to mean starting over. Bring what you know.</p></aside></div>`);
   updateResults();
 }
+
+
+function normalizeText(text) {
+  return String(text)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
+
+
+
+
+
+
+
+
+
 function filteredJobs() {
-  const query = filters.query.trim().toLowerCase();
- const place = filters.location.trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  const query = normalizeText(filters.query);
+  const place = normalizeText(filters.location);
+
   return db.jobs
-    .filter(
-      (job) =>
-        isOpen(job) &&
+    .filter((job) =>
+      isOpen(job) &&
+      normalizeText(
         `${job.title} ${job.company} ${job.description} ${job.tags.join(" ")}`
-          .toLowerCase()
-          .includes(query) &&
-       job.location.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().includes(place) &&
-        (!filters.types.length || filters.types.includes(job.type)) &&
-        (!filters.arrangements.length ||
-          filters.arrangements.includes(job.arrangement)) &&
-        (!filters.levels.length || filters.levels.includes(job.level)) &&
-        (!filters.category || job.category === filters.category),
+      ).includes(query) &&
+      normalizeText(job.location).includes(place) &&
+      (!filters.types.length || filters.types.includes(job.type)) &&
+      (!filters.arrangements.length ||
+        filters.arrangements.includes(job.arrangement)) &&
+      (!filters.levels.length || filters.levels.includes(job.level)) &&
+      (!filters.category || job.category === filters.category)
     )
     .sort((a, b) =>
       filters.sort === "salary"
         ? b.max - a.max
         : filters.sort === "deadline"
           ? a.deadline.localeCompare(b.deadline)
-          : new Date(b.createdAt) - new Date(a.createdAt),
+          : new Date(b.createdAt) - new Date(a.createdAt)
     );
 }
 function updateResults() {
