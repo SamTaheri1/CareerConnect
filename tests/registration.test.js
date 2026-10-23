@@ -13,7 +13,7 @@ const valid = { name: "Alex Candidate", email: "alex@example.com", password: "te
 
 before(async () => {
   dataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "careerconnect-test-"));
-  dataFile = path.join(dataDirectory, "users.json");
+  dataFile = path.join(dataDirectory, "users.sqlite");
   server = createServer({ dataFile });
   await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
   base = `http://127.0.0.1:${server.address().port}`;
@@ -103,7 +103,7 @@ test("newly registered account can log in; wrong credentials are rejected", asyn
   assert.equal((await post({ email: "login@example.com", password: "incorrect-password" }, "/api/login")).status, 401);
 });
 
-test("accounts persist in the configured JSON file across server instances", async () => {
+test("accounts persist in the configured SQLite database across server instances", async () => {
   await post({ ...valid, email: "persistent@example.com" });
   const fresh = createServer({ dataFile });
   await new Promise(resolve => fresh.listen(0, "127.0.0.1", resolve));
@@ -116,15 +116,17 @@ test("accounts persist in the configured JSON file across server instances", asy
 
 test("stored accounts contain a salt and hash but never the plaintext password", async () => {
   await post({ ...valid, email: "stored@example.com", password: "stored-password-123" });
-  const saved = JSON.parse(fs.readFileSync(dataFile, "utf8"));
-  const account = saved.users.find(item => item.user.email === "stored@example.com");
+  const { DatabaseSync } = require("node:sqlite");
+  const database = new DatabaseSync(dataFile);
+  const account = database.prepare("SELECT salt, password_hash AS passwordHash FROM users WHERE email = ?").get("stored@example.com");
+  database.close();
   assert.equal(typeof account.salt, "string");
   assert.equal(typeof account.passwordHash, "string");
   assert.equal(JSON.stringify(account).includes("stored-password-123"), false);
 });
 
 test("uses a configured API base path", async () => {
-  const customFile = path.join(dataDirectory, "custom-api-users.json");
+  const customFile = path.join(dataDirectory, "custom-api-users.sqlite");
   const configured = createServer({ dataFile: customFile, config: { apiBasePath: "/service/auth" } });
   await new Promise(resolve => configured.listen(0, "127.0.0.1", resolve));
   try {
@@ -139,7 +141,7 @@ test("uses a configured API base path", async () => {
 });
 
 test("limits repeated failed login attempts", async () => {
-  const throttledFile = path.join(dataDirectory, "throttled-users.json");
+  const throttledFile = path.join(dataDirectory, "throttled-users.sqlite");
   const throttled = createServer({ dataFile: throttledFile, config: { authMaxAttempts: 2, authWindowMs: 60000 } });
   await new Promise(resolve => throttled.listen(0, "127.0.0.1", resolve));
   try {
@@ -162,7 +164,7 @@ test("resume feedback reports a clear setup error when OpenAI is not configured"
 
 test("resume feedback sends validated text to OpenAI without exposing its key", async () => {
   const requests = [];
-  const feedbackFile = path.join(dataDirectory, "feedback-users.json");
+  const feedbackFile = path.join(dataDirectory, "feedback-users.sqlite");
   const feedbackServer = createServer({
     dataFile: feedbackFile,
     config: { openAiApiKey: "test-key", openAiModel: "test-model" },
@@ -194,7 +196,7 @@ test("resume feedback sends validated text to OpenAI without exposing its key", 
 
 test("resume feedback handles an unavailable OpenAI response without exposing provider details", async () => {
   const feedbackServer = createServer({
-    dataFile: path.join(dataDirectory, "feedback-upstream-users.json"),
+    dataFile: path.join(dataDirectory, "feedback-upstream-users.sqlite"),
     config: { openAiApiKey: "test-key" },
     fetch: async () => new Response(JSON.stringify({ error: { message: "provider detail" } }), { status: 429 }),
   });
@@ -212,7 +214,7 @@ test("resume feedback handles an unavailable OpenAI response without exposing pr
 
 test("resume feedback handles malformed OpenAI JSON", async () => {
   const feedbackServer = createServer({
-    dataFile: path.join(dataDirectory, "feedback-malformed-users.json"),
+    dataFile: path.join(dataDirectory, "feedback-malformed-users.sqlite"),
     config: { openAiApiKey: "test-key" },
     fetch: async () => new Response("not json", { status: 200, headers: { "Content-Type": "application/json" } }),
   });
@@ -229,7 +231,7 @@ test("resume feedback handles malformed OpenAI JSON", async () => {
 
 test("resume feedback handles an OpenAI response with no usable advice", async () => {
   const feedbackServer = createServer({
-    dataFile: path.join(dataDirectory, "feedback-empty-users.json"),
+    dataFile: path.join(dataDirectory, "feedback-empty-users.sqlite"),
     config: { openAiApiKey: "test-key" },
     fetch: async () => new Response(JSON.stringify({ output: [{ content: [{ type: "refusal", text: "" }] }] }), { status: 200 }),
   });
@@ -246,7 +248,7 @@ test("resume feedback handles an OpenAI response with no usable advice", async (
 
 test("resume feedback rejects an incomplete OpenAI response", async () => {
   const feedbackServer = createServer({
-    dataFile: path.join(dataDirectory, "feedback-incomplete-users.json"),
+    dataFile: path.join(dataDirectory, "feedback-incomplete-users.sqlite"),
     config: { openAiApiKey: "test-key" },
     fetch: async () => new Response(JSON.stringify({ status: "incomplete", output: [{ content: [{ type: "output_text", text: "Partial advice" }] }] }), { status: 200 }),
   });
@@ -264,7 +266,7 @@ test("resume feedback rejects an incomplete OpenAI response", async () => {
 test("resume feedback limits repeated requests before calling OpenAI", async () => {
   let calls = 0;
   const feedbackServer = createServer({
-    dataFile: path.join(dataDirectory, "feedback-throttled-users.json"),
+    dataFile: path.join(dataDirectory, "feedback-throttled-users.sqlite"),
     config: { openAiApiKey: "test-key", authMaxAttempts: 2, authWindowMs: 60000 },
     fetch: async () => {
       calls += 1;
@@ -289,7 +291,7 @@ test("resume feedback limits repeated requests before calling OpenAI", async () 
 test("resume feedback validates its input before calling OpenAI", async () => {
   let calls = 0;
   const validationServer = createServer({
-    dataFile: path.join(dataDirectory, "feedback-validation-users.json"),
+    dataFile: path.join(dataDirectory, "feedback-validation-users.sqlite"),
     config: { openAiApiKey: "test-key" },
     fetch: async () => { calls += 1; throw new Error("should not run"); },
   });

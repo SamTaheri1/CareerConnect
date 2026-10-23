@@ -1,3 +1,6 @@
 .env
 data/users.json
 data/*.tmp
+data/*.sqlite
+data/*.sqlite-wal
+data/*.sqlite-shm

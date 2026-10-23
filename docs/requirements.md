@@ -26,12 +26,12 @@ Additional PDF features included: saved jobs, application history, and in-page d
 
 ## Scope decisions
 
-- The interface is written with HTML, CSS, and JavaScript without a frontend framework. A small Node.js server now provides registration and login endpoints and JSON-backed account storage; see `docs/registration-backend.md`.
-- Registration and login have server-side input validation, password hashing, and login throttling. The rest of the product workflows remain browser-local demonstrations: browser role restrictions are not production authorization controls.
+- The interface is written with HTML, CSS, and JavaScript without a frontend framework. A small Node.js server now provides registration and login endpoints and SQLite storage; see `docs/registration-backend.md`.
+- Registration and login have server-side input validation, password hashing, and login throttling. Profiles, resumes, jobs, and applications persist in SQLite, with server-side session and ownership checks.
 - Salary is annual CAD for every sample and recruiter-created listing, including internships and part-time positions. The form and listing explicitly use annual units.
 - The two roles are selected during registration and cannot be switched on the profile form.
 - Existing applications retain their original submitted profile and resume even after the profile changes.
-- Sample companies and job descriptions are fictional. Their initial dates are relative to the first saved browser dataset.
+- Sample companies and job descriptions are fictional. Their initial dates are relative to the first database setup.
 - The interface contains no course or university references.
 
 ## Still outstanding
@@ -47,4 +47,4 @@ These items are not marked complete by the frontend implementation.
 
 ## Proposed additional feature awaiting team confirmation
 
-An application preparation checklist is available on an open job’s detail page for signed-in job seekers. It lets the seeker mark four preparation steps for that specific job and stores the selections in existing browser local storage. This is a proposed feature only: the team must confirm that it is team-generated, record that decision, and create its corresponding GitHub issue before representing it as the required original feature.
+An application preparation checklist is available on an open job’s detail page for signed-in job seekers. It lets the seeker mark four preparation steps for that specific job and stores the selections in the user’s SQLite profile. This is a proposed feature only: the team must confirm that it is team-generated, record that decision, and create its corresponding GitHub issue before representing it as the required original feature.

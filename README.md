@@ -1,6 +1,6 @@
 # CareerConnect
 
-Registration backend update: copy `.env.example` to `.env`, review the values, then run `node server.js`. No packages or database server are required. Test with `node --test tests/registration.test.js`. Accounts are stored in the JSON file selected by `USER_DATA_FILE`, so they remain available after a server restart. See [registration setup and task status](docs/registration-backend.md).
+SQLite storage: run `node server.js` to create the database automatically. Users, profiles, resume files, jobs, applications, saved jobs, and preparation checklists persist on the server. See [database setup](docs/database.md).
 
 ## Project description 
 CareerConnect is a website made to help people stay organized while looking for a job. Instead of having job applications, resumes, and updates all over the place, users can keep everything together on one website. They will be able to make a profile, upload their resume, look for jobs, apply, and see what is happening with each application. Recruiters can also post jobs and look through the applications they receive. The main idea is to make job searching easier to keep track of and less messy.
@@ -38,11 +38,11 @@ To run CareerConnect:
 4. Run `node server.js`.
 5. Open the address printed by the server. With the example configuration, it is `http://127.0.0.1:3000`.
 
-Node.js 22 or newer is required. No npm install, external package, or database server is required. The registration backend stores accounts in the JSON file configured by `USER_DATA_FILE`; registered accounts remain available after a server restart.
+Use Node.js 24 or newer. SQLite is built into Node, so no npm install or separate database server is required. `DATABASE_FILE` defaults to `data/careerconnect.sqlite`. Existing JSON accounts are imported automatically from `USER_DATA_FILE` without changing their passwords.
 
-To run the registration tests:
+To run all tests:
 
-`node --test tests/registration.test.js`
+`node --test tests/*.test.js`
 
 For backend configuration, endpoint behavior, and current limitations, see [registration setup and task status](docs/registration-backend.md).
 

@@ -2,7 +2,7 @@ const http = require("node:http");
 const path = require("node:path");
 const { readFile } = require("node:fs/promises");
 const { loadConfig } = require("./config");
-const { UserStore } = require("./user-store");
+const { Database } = require("./database");
 const { createLoginHandler } = require("./auth/login");
 const { createRegisterHandler } = require("./auth/register");
 const { createResumeFeedbackHandler } = require("./ai/resume-feedback");
@@ -33,7 +33,8 @@ async function readJsonBody(request, maximumBytes) {
 
 function createServer(options = {}) {
   const config = { ...loadConfig(), ...options.config };
-  const store = new UserStore(options.dataFile || config.userDataFile);
+  const store = new Database(options.databaseFile || options.dataFile || config.databaseFile,
+    options.databaseFile || options.dataFile ? options.legacyFile : config.userDataFile);
   const limiter = new AuthRateLimiter(config);
   const api = {
     [`${config.apiBasePath}/register`]: createRegisterHandler({ store, config }),
@@ -42,9 +43,42 @@ function createServer(options = {}) {
   };
   const files = { "/": ["index.html", "text/html"], "/index.html": ["index.html", "text/html"], "/styles.css": ["styles.css", "text/css"], "/data.js": ["data.js", "text/javascript"], "/app.js": ["app.js", "text/javascript"] };
 
-  return http.createServer(async (request, response) => {
+  const server = http.createServer(async (request, response) => {
     try {
       const url = new URL(request.url, "http://localhost");
+      if (url.pathname.startsWith(config.apiBasePath + "/") && request.method !== "GET") {
+        if (request.headers["sec-fetch-site"] === "cross-site" || (request.headers.origin && request.headers.origin !== `http://${request.headers.host}` && request.headers.origin !== `https://${request.headers.host}`)) {
+          return json(response, 403, { message: "Use the website to make this request." });
+        }
+      }
+      if (url.pathname === `${config.apiBasePath}/state`) {
+        const person = store.session(request);
+        if (request.method === "GET") return json(response, 200, store.state(person));
+        if (request.method !== "POST") return json(response, 405, { message: "Use GET or POST." });
+        const changes = await readJsonBody(request, 2 * 1024 * 1024);
+        if ((changes.jobs && !Array.isArray(changes.jobs)) || (changes.applications && !Array.isArray(changes.applications))) return json(response, 400, { message: "Invalid changes." });
+        store.save(person, changes);
+        const updated = store.session(request);
+        return json(response, 200, store.state(updated));
+      }
+      if (url.pathname === `${config.apiBasePath}/files`) {
+        const person = store.session(request);
+        if (request.method === "GET") {
+          const file = store.file(person, "get", url.searchParams.get("id"));
+          response.writeHead(200, { "Content-Type": "application/octet-stream", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" });
+          return response.end(Buffer.from(file.content));
+        }
+        if (request.method !== "POST") return json(response, 405, { message: "Use GET or POST." });
+        const data = await readJsonBody(request, 7 * 1024 * 1024 + 4096);
+        store.file(person, data.action, data.id, data);
+        return json(response, 200, { message: "Resume saved." });
+      }
+      if (url.pathname === `${config.apiBasePath}/logout`) {
+        if (request.method !== "POST") return json(response, 405, { message: "Use POST." });
+        store.endSession(request);
+        response.setHeader("Set-Cookie", "careerconnect_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0");
+        return json(response, 200, { message: "Logged out." });
+      }
       const handler = api[url.pathname];
       if (handler) {
         if (request.method !== "POST") {
@@ -52,6 +86,10 @@ function createServer(options = {}) {
           return json(response, 405, { message: "Use POST for this endpoint." });
         }
         const result = await handler(await readJsonBody(request, config.requestMaxBytes), request);
+        if (result.user) {
+          store.endSession(request);
+          response.setHeader("Set-Cookie", store.startSession(result.user.id));
+        }
         return json(response, result.status, result);
       }
       if (url.pathname === "/config.js") {
@@ -74,6 +112,8 @@ function createServer(options = {}) {
       if (!response.headersSent) json(response, status, { message: status === 500 ? "Something went wrong. Please try again." : error.message });
     }
   });
+  server.on("close", () => store.close());
+  return server;
 }
 
 if (require.main === module) {

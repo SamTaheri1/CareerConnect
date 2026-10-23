@@ -175,3 +175,5 @@ const seedJobs = [
     deadlineDays: 30,
   },
 ];
+
+if (typeof module !== "undefined") module.exports = { seedJobs };

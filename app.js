@@ -1,5 +1,3 @@
-const STORAGE_KEY = "careerconnect-v1";
-const SESSION_KEY = "careerconnect-session";
 const statuses = ["Applied", "Interview", "Offered", "Rejected"];
 const main = document.querySelector("#main");
 const modal = document.querySelector("#modal");
@@ -29,66 +27,49 @@ function e(value = "") {
 }
 const uid = () => crypto.randomUUID();
 const day = 86400000;
-function initialData() {
-  const now = Date.now();
-  return {
-    users: [],
-    applications: [],
-    jobs: seedJobs.map((job) => ({
-      ...job,
-      ownerId: null,
-      status: "Open",
-      createdAt: new Date(now - job.daysAgo * day).toISOString(),
-      deadline: new Date(now + job.deadlineDays * day)
-        .toISOString()
-        .slice(0, 10),
-    })),
-  };
-}
-let storageWarning = "";
-function loadData() {
-  try {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (!saved) return initialData();
-    const parsed = JSON.parse(saved);
-    if (
-      !Array.isArray(parsed.users) ||
-      !Array.isArray(parsed.jobs) ||
-      !Array.isArray(parsed.applications)
-    )
-      throw new Error("Invalid saved data");
-    return parsed;
-  } catch {
-    storageWarning =
-      "Saved data could not be read. Enable browser storage to save your changes.";
-    return initialData();
-  }
-}
-let db = loadData();
-let sessionId;
-try {
-  sessionId = sessionStorage.getItem(SESSION_KEY);
-} catch {
-  sessionId = null;
-}
+let db = { users: [], jobs: [], applications: [] };
+let savedState = structuredClone(db);
+let sessionId = null;
 function user() {
   return db.users.find((person) => person.id === sessionId);
 }
-function persist() {
+async function requestData(endpoint, body) {
+  const apiBasePath = window.CareerConnectConfig?.apiBasePath || "/api";
+  const response = await fetch(apiBasePath + endpoint, body === undefined ? {} : {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.message || "Your changes could not be saved.");
+  return result;
+}
+function acceptState(state) {
+  sessionId = state.sessionId;
+  db = { users: state.users, jobs: state.jobs, applications: state.applications };
+  savedState = structuredClone(db);
+}
+async function refreshData() {
+  acceptState(await requestData("/state"));
+}
+async function persist() {
+  const changed = (items, previous) => items.filter(item =>
+    JSON.stringify(item) !== JSON.stringify(previous.find(old => old.id === item.id)));
+  const person = user();
+  const previous = savedState.users.find(item => item.id === sessionId);
+  const changes = {
+    person: JSON.stringify(person) !== JSON.stringify(previous) ? person : undefined,
+    jobs: changed(db.jobs, savedState.jobs),
+    applications: changed(db.applications, savedState.applications),
+  };
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
-  } catch {
-    db = loadData();
-    throw new Error(
-      "Your changes could not be saved. Browser storage may be full or disabled.",
-    );
+    acceptState(await requestData("/state", changes));
+  } catch (error) {
+    db = structuredClone(savedState);
+    throw error;
   }
 }
-function setSession(id) {
-  if (id) sessionStorage.setItem(SESSION_KEY, id);
-  else sessionStorage.removeItem(SESSION_KEY);
-  sessionId = id;
-}
+
 function toast(message) {
   const element = document.querySelector("#toast");
   element.textContent = message;
@@ -140,7 +121,7 @@ function preparationChecklist(jobId) {
   const person = user();
   if (!person || person.role !== "seeker") return "";
   const completed = person.preparationChecklists?.[jobId] || [];
-  return `<section class="preparation-checklist" aria-labelledby="checklist-title"><div><p class="eyebrow">Application preparation</p><h2 id="checklist-title">Before you apply</h2><p class="hint">${completed.length} of ${preparationSteps.length} complete. This list is saved in this browser for this job.</p></div><fieldset>${preparationSteps.map(([key, label]) => `<label class="check"><input type="checkbox" data-action="toggle-checklist" data-id="${jobId}" data-step="${key}" ${completed.includes(key) ? "checked" : ""}><span>${e(label)}</span></label>`).join("")}</fieldset></section>`;
+  return `<section class="preparation-checklist" aria-labelledby="checklist-title"><div><p class="eyebrow">Application preparation</p><h2 id="checklist-title">Before you apply</h2><p class="hint">${completed.length} of ${preparationSteps.length} complete. This list is saved to your account for this job.</p></div><fieldset>${preparationSteps.map(([key, label]) => `<label class="check"><input type="checkbox" data-action="toggle-checklist" data-id="${jobId}" data-step="${key}" ${completed.includes(key) ? "checked" : ""}><span>${e(label)}</span></label>`).join("")}</fieldset></section>`;
 }
 let filters = {
   query: "",
@@ -382,7 +363,7 @@ function renderDetail(id) {
 function renderAuth(mode) {
   const register = mode === "register";
   shell(
-    `<div class="auth-wrap"><a class="back-link" href="#jobs">${icon("back")} Back to jobs</a><section class="panel"><div class="eyebrow">${register ? "A fresh start" : "Good to see you"}</div><h1>${register ? "Create your account" : "Welcome back."}</h1><p>${register ? "Keep your next opportunity within reach." : "Pick up where you left off."}</p><form id="auth-form" data-mode="${mode}">${register ? '<label>Full name<input name="name" autocomplete="name" required maxlength="80" placeholder="Your name"></label>' : ""}<label>Email address<input name="email" type="email" autocomplete="email" required maxlength="120" placeholder="you@example.com"></label><label>Password<input name="password" type="password" autocomplete="${register ? "new-password" : "current-password"}" required ${register ? 'minlength="8"' : ""} maxlength="128" placeholder="${register ? "At least 8 characters" : "Your password"}"></label>${register ? '<p class="form-heading">I’m here to</p><div class="role-options"><label><input type="radio" name="role" value="seeker" checked> Find a job</label><label><input type="radio" name="role" value="recruiter"> Hire people</label></div>' : ""}<p class="error" id="form-error" role="alert"></p><button class="btn btn-primary wide">${register ? "Create account" : "Log in"} ${icon("arrow")}</button></form><p class="auth-switch">${register ? 'Already have an account? <a href="#login">Log in</a>' : 'New to CareerConnect? <a href="#register">Create an account</a>'}</p></section><p class="hint">Accounts stay available after the server restarts. Profiles and documents stay in this browser. Use a password unique to this site.</p></div>`,
+    `<div class="auth-wrap"><a class="back-link" href="#jobs">${icon("back")} Back to jobs</a><section class="panel"><div class="eyebrow">${register ? "A fresh start" : "Good to see you"}</div><h1>${register ? "Create your account" : "Welcome back."}</h1><p>${register ? "Keep your next opportunity within reach." : "Pick up where you left off."}</p><form id="auth-form" data-mode="${mode}">${register ? '<label>Full name<input name="name" autocomplete="name" required maxlength="80" placeholder="Your name"></label>' : ""}<label>Email address<input name="email" type="email" autocomplete="email" required maxlength="120" placeholder="you@example.com"></label><label>Password<input name="password" type="password" autocomplete="${register ? "new-password" : "current-password"}" required ${register ? 'minlength="8"' : ""} maxlength="128" placeholder="${register ? "At least 8 characters" : "Your password"}"></label>${register ? '<p class="form-heading">I’m here to</p><div class="role-options"><label><input type="radio" name="role" value="seeker" checked> Find a job</label><label><input type="radio" name="role" value="recruiter"> Hire people</label></div>' : ""}<p class="error" id="form-error" role="alert"></p><button class="btn btn-primary wide">${register ? "Create account" : "Log in"} ${icon("arrow")}</button></form><p class="auth-switch">${register ? 'Already have an account? <a href="#login">Log in</a>' : 'New to CareerConnect? <a href="#register">Create an account</a>'}</p></section><p class="hint">Your account, profile, and documents are saved on the server. Use a password unique to this site.</p></div>`,
   );
 }
 async function authenticate(mode, values) {
@@ -579,43 +560,25 @@ function reviewModal(id) {
     `<div class="eyebrow">${e(job.title)}</div><h2 id="modal-title">${e(app.name)}</h2><p>${e(app.email)}</p>${app.profile?.headline ? `<h3>${e(app.profile.headline)}</h3>` : ""}${app.profile?.bio ? `<p class="application-note">${e(app.profile.bio)}</p>` : ""}${app.profile?.skills ? `<p class="small">Skills: ${e(app.profile.skills)}</p>` : ""}${app.profile?.location ? `<p class="small">${e(app.profile.location)}</p>` : ""}<button class="btn btn-secondary" data-action="download-application" data-id="${app.id}">${icon("file")} Download resume</button><h3 style="margin-top:24px">Candidate’s note</h3><p class="application-note">${e(app.note || "No note included.")}</p><form id="status-form" data-id="${id}">${selectField("Application status", "status", statuses, app.status)}<div class="history">${app.history.map((item) => `${e(item.status)} · ${date(item.date)}`).join("<br>")}</div><p id="form-error" class="error" role="alert"></p><div class="form-actions"><button class="btn btn-primary">Update status</button><button type="button" class="btn btn-secondary" data-action="close-modal">Close</button></div></form>`,
   );
 }
-// Keep resume files in IndexedDB rather than filling localStorage with file data.
-let fileDatabase;
-function openFiles() {
-  if (!fileDatabase)
-    fileDatabase = new Promise((resolve, reject) => {
-      const request = indexedDB.open("careerconnect-files", 1);
-      request.onupgradeneeded = () => request.result.createObjectStore("files");
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () =>
-        reject(new Error("Resume storage is unavailable in this browser."));
-    });
-  return fileDatabase;
-}
-async function fileOperation(action, key, value) {
-  const database = await openFiles();
-  return new Promise((resolve, reject) => {
-    const transaction = database.transaction(
-      "files",
-      action === "get" ? "readonly" : "readwrite",
-    );
-    const store = transaction.objectStore("files");
-    const request =
-      action === "put"
-        ? store.put(value, key)
-        : action === "delete"
-          ? store.delete(key)
-          : store.get(key);
-    transaction.oncomplete = () => resolve(request.result);
-    transaction.onerror = () =>
-      reject(
-        new Error(
-          "Could not access resume storage. Check the available browser storage.",
-        ),
-      );
-    transaction.onabort = () =>
-      reject(new Error("Resume storage was interrupted. Please try again."));
-  });
+// Resume bytes and application copies are stored in SQLite on the server.
+async function fileOperation(action, key, value, filename) {
+  if (action === "get") {
+    const apiBasePath = window.CareerConnectConfig?.apiBasePath || "/api";
+    const response = await fetch(apiBasePath + "/files?id=" + encodeURIComponent(key));
+    if (!response.ok) throw new Error((await response.json()).message);
+    return response.blob();
+  }
+  const body = { action, id: key };
+  if (action === "put") {
+    const bytes = new Uint8Array(await value.arrayBuffer());
+    let binary = "";
+    for (let offset = 0; offset < bytes.length; offset += 8192) {
+      binary += String.fromCharCode(...bytes.subarray(offset, offset + 8192));
+    }
+    body.content = btoa(binary);
+    body.name = filename || value.name || user()?.resumes.find(resume => resume.id === key)?.name || "resume.pdf";
+  }
+  return requestData("/files", body);
 }
 async function previewResume(id) {
   const person = user();
@@ -630,7 +593,7 @@ async function previewResume(id) {
     const file = await fileOperation("get", id);
     // Ignore reads that finish after closing, navigating, or switching previews.
     if (!modal.open || !body.isConnected || user()?.id !== person.id) return;
-    if (!file) throw new Error("This resume is no longer available in this browser. Please upload it again.");
+    if (!file) throw new Error("This resume is no longer available. Please upload it again.");
     if (!/\.pdf$/i.test(resume.name)) {
       body.textContent = "Word documents cannot be previewed here. Upload a PDF copy to preview your resume on this page, or download the original below.";
       return;
@@ -658,7 +621,7 @@ async function previewResume(id) {
 async function downloadFile(key, name) {
   const file = await fileOperation("get", key);
   if (!file)
-    throw new Error("This resume is no longer available in this browser.");
+    throw new Error("This resume is no longer available.");
   const url = URL.createObjectURL(file);
   const link = document.createElement("a");
   link.href = url;
@@ -699,17 +662,9 @@ async function handleSubmit(form) {
   if (form.id === "auth-form") {
     const mode = form.dataset.mode;
     if (mode === "register" && !values.name.trim()) throw new Error("Please enter your name.");
-    const account = await authenticate(mode, values);
-    let person = db.users.find((item) => item.id === account.id);
-    if (!person) {
-      person = { ...account, profile: {}, resumes: [], saved: [], preparationChecklists: {} };
-      db.users.push(person);
-    }
-    // Cache public details only for the existing frontend workflows.
-    delete person.password;
-    delete person.salt;
-    persist();
-    setSession(person.id);
+    await authenticate(mode, values);
+    await refreshData();
+    const person = user();
     navigate(mode === "register" ? "profile" : person.role === "recruiter" ? "postings" : "jobs");
     toast(mode === "register" ? "Your account is ready. Make yourself at home." : "Welcome back, " + person.name.split(" ")[0] + ".");
   } else if (form.id === "profile-form") {
@@ -722,7 +677,7 @@ async function handleSubmit(form) {
     person.name = values.name.trim();
     person.profile = { ...values, updatedAt: new Date().toISOString() };
     delete person.profile.name;
-    persist();
+    await persist();
     render();
     toast("Profile saved.");
   } else if (form.id === "resume-form") {
@@ -741,7 +696,7 @@ async function handleSubmit(form) {
       createdAt: new Date().toISOString(),
     });
     try {
-      persist();
+      await persist();
     } catch (error) {
       await fileOperation("delete", id);
       throw error;
@@ -767,11 +722,11 @@ async function handleSubmit(form) {
       createdAt: new Date().toISOString(),
     };
     try {
-      persist();
+      await persist();
     } catch (error) {
       person.resumes[index] = previous;
       try {
-        if (previousFile) await fileOperation("put", previous.id, previousFile);
+        if (previousFile) await fileOperation("put", previous.id, previousFile, previous.name);
         else await fileOperation("delete", previous.id);
       } catch {}
       throw error;
@@ -855,7 +810,7 @@ async function handleSubmit(form) {
         status: "Open",
         createdAt: new Date().toISOString(),
       });
-    persist();
+    await persist();
     navigate("postings");
     toast(
       form.dataset.id
@@ -883,7 +838,7 @@ async function handleSubmit(form) {
       );
     const id = uid();
     const fileId = "application-" + id;
-    await fileOperation("put", fileId, file);
+    await fileOperation("put", fileId, file, resume.name);
     const now = new Date().toISOString();
     db.applications.push({
       id,
@@ -900,7 +855,7 @@ async function handleSubmit(form) {
       history: [{ status: "Applied", date: now }],
     });
     try {
-      persist();
+      await persist();
     } catch (error) {
       await fileOperation("delete", fileId);
       throw error;
@@ -924,7 +879,7 @@ async function handleSubmit(form) {
         status: values.status,
         date: new Date().toISOString(),
       });
-      persist();
+      await persist();
     }
     modal.close();
     render();
@@ -935,7 +890,7 @@ async function handleSubmit(form) {
     );
     if (!resume) return;
     user().resumes = user().resumes.filter((item) => item.id !== resume.id);
-    persist();
+    await persist();
     await fileOperation("delete", resume.id);
     modal.close();
     render();
@@ -966,7 +921,8 @@ document.addEventListener("click", async (event) => {
   const { action, id } = button.dataset;
   try {
     if (action === "logout") {
-      setSession(null);
+      await requestData("/logout", {});
+      await refreshData();
       navigate("jobs");
       toast("You’re logged out.");
     } else if (action === "close-modal") modal.close();
@@ -999,7 +955,7 @@ document.addEventListener("click", async (event) => {
       user().saved = saved
         ? user().saved.filter((item) => item !== id)
         : [...user().saved, id];
-      persist();
+      await persist();
       const route = location.hash.slice(1).split("/")[0];
       if (route === "jobs" || !route) updateResults();
       else render();
@@ -1037,7 +993,7 @@ document.addEventListener("click", async (event) => {
         return;
       }
       job.status = job.status === "Open" ? "Closed" : "Open";
-      persist();
+      await persist();
       render();
       toast("Posting " + job.status.toLowerCase() + ".");
     }
@@ -1045,7 +1001,7 @@ document.addEventListener("click", async (event) => {
     toast(error.message);
   }
 });
-document.addEventListener("change", (event) => {
+document.addEventListener("change", async (event) => {
   const input = event.target;
   if (input.dataset.action === "toggle-checklist") {
     const person = user();
@@ -1068,7 +1024,7 @@ document.addEventListener("change", (event) => {
       ? [...new Set([...completed, step])]
       : completed.filter((key) => key !== step);
     try {
-      persist();
+      await persist();
       renderDetail(job.id);
     } catch (error) {
       toast(error.message);
@@ -1104,11 +1060,7 @@ window.addEventListener("hashchange", () => {
   window.scrollTo(0, 0);
   main.focus({ preventScroll: true });
 });
-window.addEventListener("storage", (event) => {
-  if (event.key === STORAGE_KEY) {
-    db = loadData();
-    render();
-  }
+refreshData().then(render).catch(error => {
+  main.textContent = "Could not load CareerConnect. Check that the server is running and reload the page.";
+  toast(error.message);
 });
-render();
-if (storageWarning) toast(storageWarning);
