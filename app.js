@@ -390,14 +390,27 @@ async function authenticate(mode, values) {
   if (!response.ok) throw new Error(result.message || "Unable to sign in. Please try again.");
   return result.user;
 }
-function renderProfile() {
+function renderProfile(editing = false) {
   const person = user();
   const profile = person.profile || {};
+  const isEditing = editing || !profile.updatedAt;
+  let actions = '<button type="button" class="btn btn-primary" data-action="edit-profile">Edit profile</button>';
+  if (isEditing) {
+    actions = `<button type="submit" class="btn btn-primary">${profile.updatedAt ? "Save changes" : "Save profile"}</button>`;
+    if (profile.updatedAt) {
+      actions += '<button type="button" class="btn btn-secondary" data-action="cancel-profile-edit">Cancel</button>';
+    }
+  }
   const field = (label, name, type = "text") =>
     `<label>${label}<input name="${name}" type="${type}" value="${e(profile[name])}" maxlength="${name === "skills" ? 300 : 160}"></label>`;
   shell(
-    `<div class="page-title"><div><div class="eyebrow">A little about you</div><h1>My profile</h1><p>Keep your details ready for your next move.</p></div>${badge(person.role === "recruiter" ? "Recruiter" : "Job seeker")}</div><div class="profile-layout"><section class="panel"><h2>Your details</h2><form id="profile-form"><div class="form-grid"><label>Full name<input name="name" required maxlength="80" autocomplete="name" value="${e(person.name)}"></label><label>Email address<input type="email" value="${e(person.email)}" disabled><span class="hint">Your account email</span></label>${field("Location", "location")}${field("Phone number", "phone", "tel")}${field(person.role === "recruiter" ? "Company" : "Professional headline", person.role === "recruiter" ? "company" : "headline")}${field("Website or portfolio", "website", "url")}<label class="full">${person.role === "recruiter" ? "About your company" : "About you"}<textarea name="bio" maxlength="2000" placeholder="${person.role === "recruiter" ? "Tell candidates about your team." : "A short introduction to your background and interests."}">${e(profile.bio)}</textarea></label>${person.role === "seeker" ? `<label class="full">Skills<input name="skills" value="${e(profile.skills)}" maxlength="300" placeholder="JavaScript, communication, project management"><span class="hint">Separate skills with commas.</span></label>` : ""}</div><p id="form-error" class="error" role="alert"></p><div class="form-actions"><button class="btn btn-primary">Save profile</button><span class="hint">${profile.updatedAt ? "Last updated " + date(profile.updatedAt) : "Your profile hasn’t been saved yet."}</span></div></form></section><aside>${person.role === "seeker" ? `<section class="panel"><h2>My resumes</h2><p class="small">Choose the right resume for each application.</p><div>${(person.resumes || []).map((resume) => `<div class="resume-item">${icon("file")} <strong>${e(resume.name)}</strong><div class="hint">${Math.ceil(resume.size / 1024)} KB · ${date(resume.createdAt)}</div><div class="resume-actions"><button type="button" data-action="preview-resume" data-id="${resume.id}">Preview</button><button type="button" data-action="download-resume" data-id="${resume.id}">Download</button><button type="button" data-action="replace-resume" data-id="${resume.id}">Replace</button><button type="button" data-action="delete-resume" data-id="${resume.id}">Remove</button></div></div>`).join("") || '<p class="small">No resumes uploaded yet.</p>'}</div><form id="resume-form" class="upload"><label for="resume-file">Upload a resume</label><input type="file" id="resume-file" name="resume" accept=".pdf,.doc,.docx" required><div class="hint">PDF, DOC, or DOCX. Up to 5 MB.<br>Use PDF for in-page preview.<br>Maximum 5 resumes.</div><p class="error" id="resume-error" role="alert"></p><button class="btn btn-secondary wide" type="submit">Upload resume</button></form></section>` : '<section class="panel"><h2>Ready to hire?</h2><p class="small">Give candidates a clear picture of the role and your team.</p><a href="#new-job" class="btn btn-primary wide">Post a job</a></section>'}</aside></div>`,
+    `<div class="page-title"><div><div class="eyebrow">A little about you</div><h1>My profile</h1><p>Keep your details ready for your next move.</p></div>${badge(person.role === "recruiter" ? "Recruiter" : "Job seeker")}</div><div class="profile-layout"><section class="panel"><h2>Your details</h2><form id="profile-form"><div class="form-grid"><label>Full name<input name="name" required maxlength="80" autocomplete="name" value="${e(person.name)}"></label><label>Email address<input type="email" value="${e(person.email)}" disabled><span class="hint">Your account email</span></label>${field("Location", "location")}${field("Phone number", "phone", "tel")}${field(person.role === "recruiter" ? "Company" : "Professional headline", person.role === "recruiter" ? "company" : "headline")}${field("Website or portfolio", "website", "url")}<label class="full">${person.role === "recruiter" ? "About your company" : "About you"}<textarea name="bio" maxlength="2000" placeholder="${person.role === "recruiter" ? "Tell candidates about your team." : "A short introduction to your background and interests."}">${e(profile.bio)}</textarea></label>${person.role === "seeker" ? `<label class="full">Skills<input name="skills" value="${e(profile.skills)}" maxlength="300" placeholder="JavaScript, communication, project management"><span class="hint">Separate skills with commas.</span></label>` : ""}</div><p id="form-error" class="error" role="alert"></p><div class="form-actions">${actions}<span class="hint">${profile.updatedAt ? "Last updated " + date(profile.updatedAt) : "Your profile hasn’t been saved yet."}</span></div></form></section><aside>${person.role === "seeker" ? `<section class="panel"><h2>My resumes</h2><p class="small">Choose the right resume for each application.</p><div>${(person.resumes || []).map((resume) => `<div class="resume-item">${icon("file")} <strong>${e(resume.name)}</strong><div class="hint">${Math.ceil(resume.size / 1024)} KB · ${date(resume.createdAt)}</div><div class="resume-actions"><button type="button" data-action="preview-resume" data-id="${resume.id}">Preview</button><button type="button" data-action="download-resume" data-id="${resume.id}">Download</button><button type="button" data-action="replace-resume" data-id="${resume.id}">Replace</button><button type="button" data-action="delete-resume" data-id="${resume.id}">Remove</button></div></div>`).join("") || '<p class="small">No resumes uploaded yet.</p>'}</div><form id="resume-form" class="upload"><label for="resume-file">Upload a resume</label><input type="file" id="resume-file" name="resume" accept=".pdf,.doc,.docx" required><div class="hint">PDF, DOC, or DOCX. Up to 5 MB.<br>Use PDF for in-page preview.<br>Maximum 5 resumes.</div><p class="error" id="resume-error" role="alert"></p><button class="btn btn-secondary wide" type="submit">Upload resume</button></form></section>` : '<section class="panel"><h2>Ready to hire?</h2><p class="small">Give candidates a clear picture of the role and your team.</p><a href="#new-job" class="btn btn-primary wide">Post a job</a></section>'}</aside></div>`,
   );
+  const form = document.querySelector("#profile-form");
+  form.dataset.editing = String(isEditing);
+  for (const field of form.querySelectorAll("input[name], textarea[name]")) {
+    field.readOnly = !isEditing;
+  }
 }
 function renderResumeFeedback() {
   shell(
@@ -668,6 +681,7 @@ async function handleSubmit(form) {
     navigate(mode === "register" ? "profile" : person.role === "recruiter" ? "postings" : "jobs");
     toast(mode === "register" ? "Your account is ready. Make yourself at home." : "Welcome back, " + person.name.split(" ")[0] + ".");
   } else if (form.id === "profile-form") {
+    if (form.dataset.editing !== "true") return;
     if (!values.name.trim()) throw new Error("Please enter your name.");
     if (values.website && !/^https?:\/\//i.test(values.website))
       throw new Error(
@@ -925,6 +939,12 @@ document.addEventListener("click", async (event) => {
       await refreshData();
       navigate("login");
       toast("You’re logged out.");
+    } else if (action === "edit-profile") {
+      renderProfile(true);
+      document.querySelector('#profile-form [name="name"]').focus();
+    } else if (action === "cancel-profile-edit") {
+      renderProfile();
+      document.querySelector('[data-action="edit-profile"]').focus();
     } else if (action === "close-modal") modal.close();
     else if (action === "filters") {
       const open = document.querySelector("#filters").classList.toggle("open");
