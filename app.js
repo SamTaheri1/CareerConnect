@@ -248,7 +248,7 @@ function render() {
       renderSaved();
       break;
     case "applications":
-      renderApplications();
+      loadApplications();
       break;
     case "postings":
       renderPostings();
@@ -431,6 +431,25 @@ function deadlineList(jobs) {
   return upcoming.length
     ? `<ul class="deadline-list">${upcoming.map((job) => `<li><a href="#job/${job.id}"><strong>${e(job.title)}</strong></a><span>${e(job.company)} · Apply by ${date(job.deadline)}</span>${Math.ceil((new Date(`${job.deadline}T23:59:59`) - Date.now()) / day) <= 7 ? '<div class="hint">Closing this week</div>' : ""}</li>`).join("")}</ul>`
     : '<p class="small">No upcoming deadlines for your saved jobs.</p>';
+}
+async function loadApplications() {
+  const accountId = user().id;
+  applicationFilter = "All";
+  shell('<p role="status">Loading your applications...</p>');
+  try {
+    const state = await requestData("/state");
+    if (location.hash !== "#applications" || user()?.id !== accountId) return;
+    acceptState(state);
+    if (user()?.role === "seeker") renderApplications();
+    else render();
+  } catch (error) {
+    if (location.hash !== "#applications" || user()?.id !== accountId) return;
+    shell(empty(
+      "Could not load your applications",
+      e(error.message),
+      '<button type="button" class="btn btn-primary" data-action="reload-applications">Try again</button>',
+    ));
+  }
 }
 function renderApplications() {
   const all = db.applications.filter((app) => app.userId === user().id);
@@ -939,6 +958,8 @@ document.addEventListener("click", async (event) => {
       await refreshData();
       navigate("login");
       toast("You’re logged out.");
+    } else if (action === "reload-applications") {
+      if (user()?.role === "seeker") await loadApplications();
     } else if (action === "edit-profile") {
       renderProfile(true);
       document.querySelector('#profile-form [name="name"]').focus();
