@@ -923,7 +923,7 @@ document.addEventListener("click", async (event) => {
     if (action === "logout") {
       await requestData("/logout", {});
       await refreshData();
-      navigate("jobs");
+      navigate("login");
       toast("You’re logged out.");
     } else if (action === "close-modal") modal.close();
     else if (action === "filters") {
