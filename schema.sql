@@ -47,6 +47,22 @@ CREATE TABLE IF NOT EXISTS applications (
   created_at TEXT NOT NULL, history TEXT NOT NULL,
   UNIQUE (user_id, job_id)
 );
+CREATE TABLE IF NOT EXISTS application_notes (
+  id TEXT PRIMARY KEY,
+  application_id TEXT NOT NULL
+    REFERENCES applications(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL
+    REFERENCES users(id) ON DELETE CASCADE,
+  content TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS application_notes_application
+  ON application_notes(application_id);
+
+CREATE INDEX IF NOT EXISTS application_notes_user
+  ON application_notes(user_id);
 CREATE TABLE IF NOT EXISTS saved_jobs (
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   job_id TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,

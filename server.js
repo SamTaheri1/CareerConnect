@@ -73,6 +73,49 @@ function createServer(options = {}) {
         store.file(person, data.action, data.id, data);
         return json(response, 200, { message: "Resume saved." });
       }
+           if (url.pathname === `${config.apiBasePath}/application-notes`) {
+        const person = store.session(request);
+
+        if (!person) {
+          return json(response, 401, { message: "Please log in." });
+        }
+
+        if (request.method === "GET") {
+          const applicationId = url.searchParams.get("applicationId");
+          const notes = store.getApplicationNotes(person, applicationId);
+          return json(response, 200, { notes });
+        }
+
+        if (request.method === "POST") {
+          const data = await readJsonBody(request, 2 * 1024 * 1024);
+          const result = store.addApplicationNote(
+            person,
+            data.applicationId,
+            data.content
+          );
+          return json(response, 201, result);
+        }
+
+        if (request.method === "PUT") {
+          const data = await readJsonBody(request, 2 * 1024 * 1024);
+          const result = store.updateApplicationNote(
+            person,
+            data.noteId,
+            data.content
+          );
+          return json(response, 200, result);
+        }
+
+        if (request.method === "DELETE") {
+          const data = await readJsonBody(request, 2 * 1024 * 1024);
+          const result = store.deleteApplicationNote(person, data.noteId);
+          return json(response, 200, result);
+        }
+
+        return json(response, 405, {
+          message: "Method not allowed."
+        });
+      }
       if (url.pathname === `${config.apiBasePath}/logout`) {
         if (request.method !== "POST") return json(response, 405, { message: "Use POST." });
         store.endSession(request);
