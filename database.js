@@ -204,6 +204,81 @@ class Database {
     this.sql.prepare("INSERT INTO resumes (id, user_id, name, size, content, created_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET name=excluded.name, size=excluded.size, content=excluded.content, created_at=excluded.created_at")
       .run(key, person.id, name, content.length, content, new Date().toISOString());
   }
+    // USER STORY 17 — APPLICATION NOTES
+
+  getApplicationNotes(person, applicationId) {
+    if (!person) fail("Please log in.", 401);
+    if (person.role !== "seeker") fail("Only job seekers can access notes.", 403);
+
+    const application = this.sql.prepare(
+      "SELECT id FROM applications WHERE id = ? AND user_id = ?"
+    ).get(id(applicationId), person.id);
+
+    if (!application) fail("Application not found.", 404);
+
+    return this.sql.prepare(`
+      SELECT id, application_id AS applicationId,
+             content, created_at AS createdAt,
+             updated_at AS updatedAt
+      FROM application_notes
+      WHERE application_id = ? AND user_id = ?
+      ORDER BY created_at DESC
+    `).all(applicationId, person.id);
+  }
+
+  addApplicationNote(person, applicationId, content) {
+    if (!person) fail("Please log in.", 401);
+    if (person.role !== "seeker") fail("Only job seekers can add notes.", 403);
+
+    const application = this.sql.prepare(
+      "SELECT id FROM applications WHERE id = ? AND user_id = ?"
+    ).get(id(applicationId), person.id);
+
+    if (!application) fail("Application not found.", 404);
+
+    const noteContent = text(content, "note", 2000, true);
+    const noteId = randomBytes(16).toString("hex");
+    const now = new Date().toISOString();
+
+    this.sql.prepare(`
+      INSERT INTO application_notes
+      (id, application_id, user_id, content, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(noteId, applicationId, person.id, noteContent, now, now);
+
+    return { id: noteId, applicationId, content: noteContent,
+             createdAt: now, updatedAt: now };
+  }
+
+  updateApplicationNote(person, noteId, content) {
+    if (!person) fail("Please log in.", 401);
+    if (person.role !== "seeker") fail("Only job seekers can edit notes.", 403);
+
+    const noteContent = text(content, "note", 2000, true);
+
+    const result = this.sql.prepare(`
+      UPDATE application_notes
+      SET content = ?, updated_at = ?
+      WHERE id = ? AND user_id = ?
+    `).run(noteContent, new Date().toISOString(), id(noteId), person.id);
+
+    if (!result.changes) fail("Note not found.", 404);
+
+    return { message: "Note updated successfully." };
+  }
+
+  deleteApplicationNote(person, noteId) {
+    if (!person) fail("Please log in.", 401);
+    if (person.role !== "seeker") fail("Only job seekers can delete notes.", 403);
+
+    const result = this.sql.prepare(
+      "DELETE FROM application_notes WHERE id = ? AND user_id = ?"
+    ).run(id(noteId), person.id);
+
+    if (!result.changes) fail("Note not found.", 404);
+
+    return { message: "Note deleted successfully." };
+  }
 }
 module.exports = { Database };
 
