@@ -30,21 +30,87 @@ Our solution is to create a website called CareerConnect that helps job seekers 
 
 ## Setup Instructions
 
-To run CareerConnect:
+## Setup Instructions
 
-1. Clone the GitHub repository.
-2. Open the CareerConnect folder.
-3. Copy `.env.example` to `.env` and review the local configuration values.
-4. Run `node server.js`.
-5. Open the address printed by the server. With the example configuration, it is `http://127.0.0.1:3000`.
+Follow these steps to clone and run CareerConnect on your computer.
 
-Use Node.js 24 or newer. SQLite is built into Node, so no npm install or separate database server is required. `DATABASE_FILE` defaults to `data/careerconnect.sqlite`. Existing JSON accounts are imported automatically from `USER_DATA_FILE` without changing their passwords.
+### Step 1: Install the required software
 
-To run all tests:
+Make sure you have installed:
+- Node.js (version 24 or newer): https://nodejs.org/
+- Git: https://git-scm.com/
+
+Open your terminal and verify the installations:
+
+`node -v`
+
+`npm -v`
+
+`git --version`
+
+### Step 2: Clone the repository
+
+Open your terminal and enter:
+
+`git clone https://github.com/USERNAME/REPOSITORY.git`
+
+Replace USERNAME and REPOSITORY with the actual GitHub repository information.
+
+### Step 3: Navigate to the project folder
+
+Enter:
+
+`cd REPOSITORY`
+
+Replace REPOSITORY with your project folder name.
+
+### Step 4: Install dependencies
+
+If the project has a package.json file containing external dependencies, enter:
+
+`npm install`
+
+If there are no external dependencies, this step can be skipped.
+
+### Step 5: Configure the environment
+
+On macOS or Linux, enter:
+
+`cp .env.example .env`
+
+On Windows Command Prompt, enter:
+
+`copy .env.example .env`
+
+Review the `.env` file and adjust the configuration if necessary.
+
+### Step 6: Start the server
+
+Enter:
+
+`node server.js`
+
+The SQLite database will be created automatically if it does not exist.
+
+### Step 7: Open the website
+
+Open your browser and enter:
+
+`http://127.0.0.1:3000`
+
+The CareerConnect website should now be running.
+
+### Step 8: Run automated tests (optional)
+
+Enter:
 
 `node --test tests/*.test.js`
 
-For backend configuration, endpoint behavior, and current limitations, see [registration setup and task status](docs/registration-backend.md).
+### Additional Information
+
+- SQLite is built into Node.js 24, so no separate database installation is required.
+- The database is saved by default at `data/careerconnect.sqlite`.
+- For further details, see [Database Setup](docs/database.md) and [Registration Backend](docs/registration-backend.md).
 
 ## Proposed Features
 We plan to include:  
