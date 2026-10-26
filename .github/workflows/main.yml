@@ -45,6 +45,7 @@ jobs:
             git show --pretty='' --name-status HEAD
           fi
 
+      # Node.js 24 provides node:sqlite. No SQLite service, CLI or npm driver is needed.
       - name: Set up Node.js 24
         uses: actions/setup-node@v4
         with:
@@ -55,7 +56,10 @@ jobs:
           node --version
           npm --version
           node -e "if (Number(process.versions.node.split('.')[0]) !== 24) { throw new Error('Node.js 24 is required'); }"
+          node -e "if (typeof require('node:sqlite').DatabaseSync !== 'function') { throw new Error('Built-in SQLite support is required'); }"
 
+      # The project currently uses built-in Node modules and has no npm dependencies.
+      # Keep this check; only install packages when a package.json actually declares them.
       - name: Install or verify dependencies
         run: |
           if [[ -f package.json ]]; then
@@ -161,5 +165,13 @@ jobs:
           }
           NODE
 
+      # Feature prerequisites belong in each test's setup, not in a story execution order:
+      # - Login: a registered account and database access; logout: an active session.
+      # - Profile editing: an existing profile; resume replacement/deletion: an uploaded file.
+      # - Job search, filters and details: job data.
+      # - Applying: a logged-in user, an existing job and an uploaded resume to submit.
+      # - Submitted applications: existing records, returned only for the logged-in seeker.
+      # Tests should create their own data and temporary databases where needed.
+      # These prerequisites do not require separate jobs or GitHub Actions needs rules.
       - name: Run automated tests
         run: node --test tests/*.test.js
