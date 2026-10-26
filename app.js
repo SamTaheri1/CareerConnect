@@ -21,7 +21,7 @@ function e(value = "") {
     /[&<>"']/g,
     (char) =>
       ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[
-        char
+      char
       ],
   );
 }
@@ -33,10 +33,10 @@ let sessionId = null;
 function user() {
   return db.users.find((person) => person.id === sessionId);
 }
-async function requestData(endpoint, body) {
+async function requestData(endpoint, body, method = "POST") {
   const apiBasePath = window.CareerConnectConfig?.apiBasePath || "/api";
   const response = await fetch(apiBasePath + endpoint, body === undefined ? {} : {
-    method: "POST",
+    method,
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
@@ -133,21 +133,22 @@ let filters = {
   sort: "newest",
 };
 let applicationFilter = "All";
+let applicationNotes = {};
 function header(route) {
   const person = user();
   const links =
     person?.role === "recruiter"
       ? [
-          ["jobs", "Find jobs"],
-          ["postings", "My postings"],
-          ["candidates", "Applications"],
-        ]
+        ["jobs", "Find jobs"],
+        ["postings", "My postings"],
+        ["candidates", "Applications"],
+      ]
       : [
-          ["jobs", "Find jobs"],
-          ["applications", "My applications"],
-          ["saved", "Saved jobs"],
-          ["resume-feedback", "Resume feedback"],
-        ];
+        ["jobs", "Find jobs"],
+        ["applications", "My applications"],
+        ["saved", "Saved jobs"],
+        ["resume-feedback", "Resume feedback"],
+      ];
   document.querySelector("#navigation").innerHTML = links
     .map(
       ([path, label]) =>
@@ -157,8 +158,8 @@ function header(route) {
   document.querySelector("#account-actions").innerHTML = person
     ? `<a href="#profile" class="avatar" aria-label="My profile">${e(person.name.slice(0, 1).toUpperCase())}</a><a class="account-name" href="#profile">${e(person.name.split(" ")[0])}</a><button class="btn btn-text" data-action="logout">Log out</button>`
     : '<a href="#login" class="btn btn-text">Log in</a><a href="#register" class="btn btn-primary">Get started ' +
-      icon("arrow") +
-      "</a>";
+    icon("arrow") +
+    "</a>";
 }
 function shell(content) {
   main.innerHTML = `<div class="page">${content}</div>`;
@@ -333,10 +334,10 @@ function updateResults() {
   document.querySelector("#job-results").innerHTML = jobs.length
     ? jobs.map(jobCard).join("")
     : empty(
-        "No jobs found",
-        "Try a different keyword or broaden your filters.",
-        '<button class="btn btn-secondary" data-action="clear-filters">Clear all filters</button>',
-      );
+      "No jobs found",
+      "Try a different keyword or broaden your filters.",
+      '<button class="btn btn-secondary" data-action="clear-filters">Clear all filters</button>',
+    );
 }
 function jobCard(job) {
   const saved = user()?.saved?.includes(job.id);
@@ -459,23 +460,124 @@ function renderApplications() {
     )
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   shell(
-    `<div class="page-title"><div><div class="eyebrow">Every step forward</div><h1>My applications</h1><p>Your search, with a little more perspective.</p></div><a class="btn btn-secondary" href="#jobs">Find more jobs ${icon("arrow")}</a></div><div class="stats">${statuses.map((status) => `<div class="stat"><strong>${all.filter((app) => app.status === status).length}</strong><span>${status}</span></div>`).join("")}</div><div class="profile-layout"><section><div class="toolbar"><h2>Application history</h2><select id="application-filter" aria-label="Filter applications by status">${["All", ...statuses].map((status) => `<option ${applicationFilter === status ? "selected" : ""}>${status}</option>`).join("")}</select></div>${
-      shown
-        .map((app) => {
-          const job = db.jobs.find((j) => j.id === app.jobId);
-          return `<article class="application">${logo(job)}<div class="grow"><h3><a href="#job/${job.id}">${e(job.title)}</a></h3><p>${e(job.company)} · Applied ${date(app.createdAt)}</p><div class="history">${app.history.map((item) => `${e(item.status)} · ${date(item.date)}`).join(" → ")}</div></div>${badge(app.status)}</article>`;
-        })
-        .join("") ||
-      empty(
-        all.length
-          ? "No applications with this status"
-          : "Your next chapter starts with one application",
-        all.length
-          ? "Choose another status to see your applications."
-          : "Find a role you like and send your first application.",
-      )
+    `<div class="page-title"><div><div class="eyebrow">Every step forward</div><h1>My applications</h1><p>Your search, with a little more perspective.</p></div><a class="btn btn-secondary" href="#jobs">Find more jobs ${icon("arrow")}</a></div><div class="stats">${statuses.map((status) => `<div class="stat"><strong>${all.filter((app) => app.status === status).length}</strong><span>${status}</span></div>`).join("")}</div><div class="profile-layout"><section><div class="toolbar"><h2>Application history</h2><select id="application-filter" aria-label="Filter applications by status">${["All", ...statuses].map((status) => `<option ${applicationFilter === status ? "selected" : ""}>${status}</option>`).join("")}</select></div>${shown
+      .map((app) => {
+        const job = db.jobs.find((j) => j.id === app.jobId);
+        return `<article class="application">${logo(job)}<div class="grow"><h3><a href="#job/${job.id}">${e(job.title)}</a></h3><p>${e(job.company)} · Applied ${date(app.createdAt)}</p><div class="history">${app.history.map((item) => `${e(item.status)} · ${date(item.date)}`).join(" → ")}</div><button type="button" class="btn btn-secondary" data-action="application-notes" data-id="${e(app.id)}" style="margin-top:12px">My private notes</button></div>${badge(app.status)}</article>`;
+      })
+      .join("") ||
+    empty(
+      all.length
+        ? "No applications with this status"
+        : "Your next chapter starts with one application",
+      all.length
+        ? "Choose another status to see your applications."
+        : "Find a role you like and send your first application.",
+    )
     } </section><aside class="panel"><h2>On your radar</h2>${deadlineList(db.jobs.filter((job) => user().saved.includes(job.id) && !all.some((app) => app.jobId === job.id)))}</aside></div>`,
   );
+}
+async function openApplicationNotes(applicationId) {
+  const app = db.applications.find(
+    item => item.id === applicationId && item.userId === user()?.id
+  );
+
+  if (!app || user()?.role !== "seeker") {
+    throw new Error("Application not found.");
+  }
+
+  const job = db.jobs.find(item => item.id === app.jobId);
+
+  const response = await requestData(
+    "/application-notes?applicationId=" + encodeURIComponent(applicationId)
+  );
+
+  const notes = Array.isArray(response)
+    ? response
+    : (response.notes || response.data || []);
+
+  applicationNotes[applicationId] = notes;
+
+  openModal(`
+    <h2 id="modal-title">Private application notes</h2>
+    <p>${e(job?.title || "Your application")} — Only you can view these notes.</p>
+
+    <div>
+      ${notes.length
+      ? notes.map(note => `
+          <div class="panel" style="margin:12px 0;padding:14px">
+            <p style="white-space:pre-wrap">${e(note.content)}</p>
+
+            <div class="form-actions">
+              <button type="button" class="btn btn-secondary"
+                data-action="edit-application-note"
+                data-id="${e(note.id)}"
+                data-application-id="${e(applicationId)}">
+                Edit
+              </button>
+
+              <button type="button" class="btn btn-secondary"
+                data-action="delete-application-note"
+                data-id="${e(note.id)}"
+                data-application-id="${e(applicationId)}">
+                Delete
+              </button>
+            </div>
+          </div>
+        `).join("")
+      : '<p class="hint">No private notes yet.</p>'
+    }
+    </div>
+
+    <form id="application-note-form" data-id="${e(applicationId)}">
+      <label>
+        New note
+        <textarea name="content" required maxlength="2000"
+          rows="4" placeholder="Write your private note..."></textarea>
+      </label>
+
+      <p class="error" role="alert"></p>
+
+      <div class="form-actions">
+        <button class="btn btn-primary">Add note</button>
+        <button type="button" class="btn btn-secondary"
+          data-action="close-modal">Close</button>
+      </div>
+    </form>
+  `);
+}
+
+function editApplicationNote(applicationId, noteId) {
+  const note = (applicationNotes[applicationId] || [])
+    .find(item => String(item.id) === String(noteId));
+
+  if (!note) {
+    throw new Error("Note not found.");
+  }
+
+  openModal(`
+    <h2 id="modal-title">Edit private note</h2>
+
+    <form id="edit-application-note-form"
+      data-id="${e(applicationId)}"
+      data-note-id="${e(noteId)}">
+
+      <label>
+        Note
+        <textarea name="content" required maxlength="2000"
+          rows="5">${e(note.content)}</textarea>
+      </label>
+
+      <p class="error" role="alert"></p>
+
+      <div class="form-actions">
+        <button class="btn btn-primary">Save changes</button>
+        <button type="button" class="btn btn-secondary"
+          data-action="application-notes"
+          data-id="${e(applicationId)}">Cancel</button>
+      </div>
+    </form>
+  `);
 }
 function renderPostings() {
   const jobs = db.jobs
@@ -518,17 +620,16 @@ function renderCandidates() {
     )
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   shell(
-    `<div class="page-title"><div><div class="eyebrow">Meet your next teammate</div><h1>Applications</h1><p>Review candidates and keep them in the loop.</p></div></div><div class="toolbar"><span class="muted">${apps.length} ${apps.length === 1 ? "application" : "applications"}</span><select id="candidate-job" aria-label="Filter by job posting"><option value="">All postings</option>${jobs.map((job) => `<option value="${job.id}" ${selectedId === job.id ? "selected" : ""}>${e(job.title)}</option>`).join("")}</select></div>${
-      apps
-        .map((app) => {
-          const job = jobs.find((job) => job.id === app.jobId);
-          return `<article class="application"><span class="avatar">${e(app.name.slice(0, 1))}</span><div class="grow"><h3>${e(app.name)}</h3><p>${e(job.title)} · ${date(app.createdAt)}</p></div>${badge(app.status)}<button class="btn btn-secondary" data-action="review" data-id="${app.id}">Review application</button></article>`;
-        })
-        .join("") ||
-      empty(
-        "No applications yet",
-        "Applications to your postings will appear here.",
-      )
+    `<div class="page-title"><div><div class="eyebrow">Meet your next teammate</div><h1>Applications</h1><p>Review candidates and keep them in the loop.</p></div></div><div class="toolbar"><span class="muted">${apps.length} ${apps.length === 1 ? "application" : "applications"}</span><select id="candidate-job" aria-label="Filter by job posting"><option value="">All postings</option>${jobs.map((job) => `<option value="${job.id}" ${selectedId === job.id ? "selected" : ""}>${e(job.title)}</option>`).join("")}</select></div>${apps
+      .map((app) => {
+        const job = jobs.find((job) => job.id === app.jobId);
+        return `<article class="application"><span class="avatar">${e(app.name.slice(0, 1))}</span><div class="grow"><h3>${e(app.name)}</h3><p>${e(job.title)} · ${date(app.createdAt)}</p></div>${badge(app.status)}<button class="btn btn-secondary" data-action="review" data-id="${app.id}">Review application</button></article>`;
+      })
+      .join("") ||
+    empty(
+      "No applications yet",
+      "Applications to your postings will appear here.",
+    )
     }`,
   );
 }
@@ -675,9 +776,9 @@ async function validateResumeFile(file) {
       : ext === "docx"
         ? bytes[0] === 0x50 && bytes[1] === 0x4b
         : bytes[0] === 0xd0 &&
-          bytes[1] === 0xcf &&
-          bytes[2] === 0x11 &&
-          bytes[3] === 0xe0;
+        bytes[1] === 0xcf &&
+        bytes[2] === 0x11 &&
+        bytes[3] === 0xe0;
   if (!valid)
     throw new Error(
       "The file content does not match its extension. Choose a valid document.",
@@ -685,6 +786,38 @@ async function validateResumeFile(file) {
 }
 async function handleSubmit(form) {
   const values = Object.fromEntries(new FormData(form));
+  if (
+    form.id === "application-note-form" ||
+    form.id === "edit-application-note-form"
+  ) {
+    const content = String(values.content || "").trim();
+
+    if (!content) {
+      throw new Error("Write a note before saving.");
+    }
+
+    const applicationId = form.dataset.id;
+
+    if (form.id === "application-note-form") {
+      await requestData("/application-notes", {
+        applicationId,
+        content
+      });
+
+      toast("Private note added.");
+    } else {
+      await requestData("/application-notes", {
+        noteId: form.dataset.noteId,
+        content
+      }, "PUT");
+
+      toast("Private note updated.");
+    }
+
+    if (modal.open) modal.close();
+    await openApplicationNotes(applicationId);
+    return;
+  }
   if (form.id === "search-form") {
     filters.query = values.query;
     filters.location = values.location;
@@ -761,7 +894,7 @@ async function handleSubmit(form) {
       try {
         if (previousFile) await fileOperation("put", previous.id, previousFile, previous.name);
         else await fileOperation("delete", previous.id);
-      } catch {}
+      } catch { }
       throw error;
     }
     modal.close();
@@ -953,6 +1086,32 @@ document.addEventListener("click", async (event) => {
   if (!button) return;
   const { action, id } = button.dataset;
   try {
+    if (action === "application-notes") {
+      if (modal.open) modal.close();
+      await openApplicationNotes(id);
+      return;
+    }
+
+    if (action === "edit-application-note") {
+      if (modal.open) modal.close();
+      editApplicationNote(button.dataset.applicationId, id);
+      return;
+    }
+
+    if (action === "delete-application-note") {
+      if (!confirm("Delete this private note?")) return;
+
+      await requestData("/application-notes", {
+        noteId: id
+      }, "DELETE");
+
+      toast("Private note deleted.");
+
+      if (modal.open) modal.close();
+      await openApplicationNotes(button.dataset.applicationId);
+      return;
+    }
+
     if (action === "logout") {
       await requestData("/logout", {});
       await refreshData();
