@@ -5,25 +5,138 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   test:
+    name: CareerConnect CI Checks
     runs-on: ubuntu-latest
 
     steps:
+      # 1. Download repository
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # 2. Display push information
+      - name: Show push information
+        run: |
+          echo "Repository: $GITHUB_REPOSITORY"
+          echo "Event: $GITHUB_EVENT_NAME"
+          echo "Triggered by: $GITHUB_ACTOR"
+          echo "Branch: ${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
+          echo "Commit: $GITHUB_SHA"
+          echo "Latest commit details:"
+          git log -1 --pretty=format:'Author: %an%nMessage: %s%n'
+          echo ""
+          echo "Files changed:"
+          git show --pretty="" --name-only HEAD
+
+      # 3. Set up Node.js
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '24'
 
+      # 4. Verify Node.js and npm versions
+      - name: Check Node.js version
+        run: |
+          node --version
+          npm --version
+          node -e "if (process.versions.node.split('.')[0] !== '24') process.exit(1)"
+          echo "Node.js version check passed"
+
+      # 5. Install dependencies
+      - name: Install dependencies
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
+          echo "Dependencies installed successfully"
+
+      # 6. Check JavaScript syntax
       - name: Check JavaScript syntax
         run: |
-          find . -type f -name "*.js" -not -path "./.git/*" -print0 |
+          find . -type f -name "*.js" \
+            -not -path "./node_modules/*" \
+            -not -path "./.git/*" -print0 |
           while IFS= read -r -d '' file; do
+            echo "Checking $file"
             node --check "$file" || exit 1
           done
+          echo "JavaScript syntax check passed"
 
-      - name: Run tests
-        run: node --test tests/*.test.js
+      # 7. Start application and check SQLite database
+      - name: Check SQLite database
+        shell: bash
+        run: |
+          node server.js > server.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
+
+          echo "Starting CareerConnect server..."
+
+          READY=0
+          for attempt in {1..20}; do
+            if curl --fail --silent http://127.0.0.1:3000/ > /dev/null; then
+              READY=1
+              break
+            fi
+            sleep 1
+          done
+
+          if [ "$READY" -ne 1 ]; then
+            echo "Server startup failed"
+            cat server.log
+            exit 1
+          fi
+
+          echo "Server started successfully"
+
+          DB_FILE=$(find . -type f \
+            \( -name "*.db" -o -name "*.sqlite" -o -name "*.sqlite3" \) \
+            -not -path "./node_modules/*" \
+            -not -path "./.git/*" -print -quit)
+
+          if [ -z "$DB_FILE" ]; then
+            echo "SQLite database file not found"
+            exit 1
+          fi
+
+          echo "Database found: $DB_FILE"
+
+          node --input-type=commonjs - "$DB_FILE" <<'NODE'
+          const { DatabaseSync } = require("node:sqlite");
+
+          const db = new DatabaseSync(process.argv[2], {
+            readOnly: true
+          });
+
+          const integrity = db.prepare(
+            "PRAGMA integrity_check"
+          ).get();
+
+          if (integrity.integrity_check !== "ok") {
+            throw new Error("SQLite database integrity check failed");
+          }
+
+          const tables = db.prepare(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
+          ).all();
+
+          if (tables.length === 0) {
+            throw new Error("No application database tables found");
+          }
+
+          console.log("SQLite integrity check passed");
+          console.log("Database tables:", tables.map(t => t.name));
+
+          db.close();
+          NODE
+
+      # 8. Run automated tests
+      - name: Run automated tests
+        run: |
+          node --test tests/*.test.js
