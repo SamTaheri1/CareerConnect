@@ -1,4 +1,6 @@
 .env
+.env.*
+!.env.example
 data/users.json
 data/*.tmp
 data/*.sqlite
