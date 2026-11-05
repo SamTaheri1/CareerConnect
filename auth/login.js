@@ -7,7 +7,7 @@ function createLoginHandler({ store, config, limiter }) {
     const password = validatePassword(data.password);
     const key = `${request.socket.remoteAddress || "unknown"}:${email}`;
     limiter.check(key);
-    const account = store.findByEmail(email);
+    const account = (await store.findByEmail(email));
     if (!account || typeof account.salt !== "string" || typeof account.passwordHash !== "string") {
       throw { status: 401, message: "The email or password is incorrect." };
     }

@@ -1,45 +1,83 @@
-# SQLite storage
+# Shared Supabase PostgreSQL storage
 
-Run `node server.js` with Node.js 24 or newer. No npm packages or separate database service are needed. The server creates the database directory and tables automatically. The existing HTML, CSS, and plain JavaScript interface still runs through the Node server.
+The website uses Supabase PostgreSQL through the Node server and the `pg` driver.
+There is no local database fallback. Cloning GitHub downloads code, not records;
+each checkout connects to the same Supabase project to see the same saved data.
 
-`DATABASE_FILE` sets the database path, relative to the project directory unless absolute. The default is `data/careerconnect.sqlite`. SQLite files and their WAL/SHM companion files are excluded from Git and are not served by the website. Stop the server before copying the database for a simple backup.
+## First-time setup
 
-## Tables and relationships
+1. Install Node.js 24+ and run `npm ci` in the repository root.
+2. Copy `.env.example` to `.env` only if `.env` does not already exist.
+3. In Supabase, select **Connect > Session pooler**. Put that connection string
+   in `.env` as `DATABASE_URL`, replacing the password placeholder. URL-encode
+   special characters in the password. Never share this value in Git or chat.
+4. Connections require verified TLS. If the certificate chain needs the
+   Supabase CA, download it from database settings and set `DATABASE_CA_FILE`
+   to its local path. Certificate verification is not disabled.
+5. Run `npm run db:setup` once to create the private `careerconnect` schema.
+   Re-running it preserves records. It does not insert sample jobs.
+6. To transfer the existing SQLite records, stop the old server and run
+   `npm run db:import -- data/careerconnect.sqlite` once, before new users start
+   using the empty target. Keep the source file and WAL companions as backup.
+7. Run `npm run db:check`, then `npm start`.
 
-| Table | Contents and relationships |
+For subsequent checkouts: `npm ci`, provide the same project's private database
+configuration through a trusted channel, then `npm start`. Do not re-import data.
+For deployments, set these values in the hosting service's secret settings.
+The Supabase GitHub connection does not supply credentials to local clones.
+
+The public URL/key and `@supabase/supabase-js` are for Supabase's HTTP APIs; they
+cannot replace `DATABASE_URL` in this server-side architecture. The existing login
+system is retained, so accounts are in `careerconnect.users`, not Supabase Auth.
+The frontend remains plain HTML, CSS and JavaScript. The previously installed
+Supabase JavaScript/SSR packages are not used by this PostgreSQL backend.
+
+## Data and security
+
+Select the `careerconnect` schema in Supabase's Table Editor to inspect records.
+It is intentionally excluded from the public Data API. Browser roles `anon` and
+`authenticated` have no schema/table access. All website access goes through the
+Node API's session and ownership checks. Do not expose this schema through the
+Data API: it includes password hashes, private resumes, and session tokens.
+
+| Table | Contents |
 | --- | --- |
-| users | Account ID, name, unique email, role, salt, password hash |
-| profiles | One profile per user, contact details, bio, skills, and preparation checklists |
-| resumes | Owner, filename, size, upload date, file bytes, and whether it appears in My resumes |
-| jobs | Recruiter owner, job details, salary, status, and deadline; sample jobs have no owner |
-| applications | Job, applicant, submitted resume copy, contact/profile snapshot, status, and history |
-| saved_jobs | User/job pairs for bookmarks |
-| sessions | Hashed session tokens, user, and expiration date |
-| migrations | Records one-time setup and JSON account import |
+| users | Account ID, name, normalized unique email, role, salt, password hash |
+| profiles | Contact details, biography, skills, preparation checklists |
+| jobs | Recruiter owner, job details, salary, status, deadline |
+| resumes | Owner, name, size, binary file bytes, listing flag |
+| applications | Job, applicant, immutable resume copy, profile snapshot, status/history |
+| application_notes | Private seeker notes associated with an application |
+| saved_jobs | User/job bookmarks |
+| sessions | Hashed session tokens and expiry |
+| migrations | Schema initialization and one-time legacy import marker |
 
-Foreign keys enforce the relationships. Email matching is case-insensitive. A user can apply to a job only once. List fields such as job requirements and application history use JSON within their table rows. File bytes are BLOBs in the resumes table.
+Resume bytes use PostgreSQL `BYTEA`; they are remote, not local files. List and
+snapshot fields remain JSON-encoded text to preserve existing API behavior.
+Profile/job/application saves use one transaction. A database advisory lock
+serializes state/file writes across server instances to preserve ownership and
+submitted-resume checks. This favors correctness over high write throughput.
 
-Application resumes are separate copies. Replacing or deleting a profile resume does not change an existing application. Submitted copies cannot be overwritten or deleted through the file API.
+## Legacy import
 
-## Existing data
+Only `scripts/import-sqlite.js` reads SQLite, in read-only mode with a consistent
+snapshot. It transfers users, profiles, jobs, resume bytes, applications, notes,
+and saved jobs atomically. Existing password hashes remain valid. Sessions are
+not migrated; sign in again. A marker prevents repeated imports, and a nonempty
+target is rejected rather than merging IDs or overwriting data. Failed imports
+roll back. Old ownerless demo jobs are preserved if present in the source; no
+new ones are generated automatically. Old browser-only data is not imported.
 
-At startup, accounts in the old `USER_DATA_FILE` (default `data/users.json`) are imported once, keeping their IDs, salts, and password hashes. The original file is left untouched. Sample jobs are inserted once, so restarting the server does not change their dates or duplicate them.
+## API and validation
 
-Old localStorage profiles/jobs/applications and IndexedDB files remain in their original browser storage; they are not automatically imported or erased. Those browser-only records were not authenticated server records. Existing JSON accounts can log in normally; any old browser-only profile details or documents must be saved/uploaded again. All new saves use SQLite and are available when signing in from another browser.
+API paths and response shapes are unchanged: registration/login, logout,
+`/state`, `/files`, and private `/application-notes`. AI feedback remains unsaved.
+`DATABASE_FILE` and `USER_DATA_FILE` are no longer used.
 
-## API
-
-All paths use the configured `API_BASE_PATH` (default `/api`).
-
-- `POST /register` and `POST /login`: existing validation and password hashing, plus an HttpOnly session cookie.
-- `POST /logout`: removes the session.
-- `GET /state`: public jobs plus the signed-in user's profile and permitted applications.
-- `POST /state`: saves changed profile, job, and application records in one transaction. The frontend sends only records that changed, so saving a profile does not overwrite other recruiters' jobs.
-- `GET /files?id=...`: downloads an owned resume or a submitted copy for the job's recruiter.
-- `POST /files`: uploads or deletes an owned resume. Uploads are limited to 5 MB and checked for PDF/DOC/DOCX signatures.
-
-Server-side checks restrict job edits and application status changes to the job's recruiter. Only job seekers can upload resumes or apply. Password hashes, salts, and session tokens are never included in state responses. AI feedback remains unsaved.
-
-## Tests
-
-Run `node --test tests/*.test.js`. Tests use temporary databases, not the site's configured database. They cover registration, login, duplicate emails, validation, JSON import, foreign keys, persistence across a full restart, profile/job/resume/application saves, saved jobs, checklists, submitted copies, rollback, logout, and access checks.
+Run `npm test`. Tests use an isolated PostgreSQL engine (PGlite) and never connect
+to the shared project. They cover persistence across API server instances,
+registration/login, access restrictions, notes, resume copies, rollback, and
+import behavior. `npm run db:check` separately verifies the real remote connection
+without printing credentials or personal records. Apply future schema changes
+through explicit versioned migrations; changing CREATE TABLE IF NOT EXISTS does
+not alter existing columns.

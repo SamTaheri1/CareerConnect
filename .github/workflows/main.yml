@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   test:
-    name: Node, SQLite and automated tests
+    name: Node, PostgreSQL and automated tests
     runs-on: ubuntu-latest
 
     steps:
@@ -45,133 +45,14 @@ jobs:
             git show --pretty='' --name-status HEAD
           fi
 
-      # Node.js 24 provides node:sqlite. No SQLite service, CLI or npm driver is needed.
       - name: Set up Node.js 24
         uses: actions/setup-node@v4
         with:
           node-version: '24'
+          cache: npm
 
-      - name: Verify Node.js and npm versions
-        run: |
-          node --version
-          npm --version
-          node -e "if (Number(process.versions.node.split('.')[0]) !== 24) { throw new Error('Node.js 24 is required'); }"
-          node -e "if (typeof require('node:sqlite').DatabaseSync !== 'function') { throw new Error('Built-in SQLite support is required'); }"
+      - name: Install dependencies
+        run: npm ci
 
-      # The project currently uses built-in Node modules and has no npm dependencies.
-      # Keep this check; only install packages when a package.json actually declares them.
-      - name: Install or verify dependencies
-        run: |
-          if [[ -f package.json ]]; then
-            if [[ -f package-lock.json ]]; then
-              npm ci
-            else
-              npm install
-            fi
-          else
-            echo 'No package.json found; checking for external npm dependencies.'
-            node <<'NODE'
-          const fs = require('node:fs');
-          const path = require('node:path');
-          const { builtinModules } = require('node:module');
-          const builtins = new Set(builtinModules);
-          const external = new Set();
-          const excluded = new Set(['.git', 'node_modules', '.github']);
-
-          function walk(dir) {
-            for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-              if (entry.isDirectory() && !excluded.has(entry.name)) {
-                walk(path.join(dir, entry.name));
-              } else if (entry.isFile() && entry.name.endsWith('.js')) {
-                const code = fs.readFileSync(path.join(dir, entry.name), 'utf8');
-                const imports = /\brequire\s*\(\s*['"]([^'"]+)['"]\s*\)|\bfrom\s*['"]([^'"]+)['"]/g;
-                for (const match of code.matchAll(imports)) {
-                  const specifier = match[1] || match[2];
-                  if (specifier.startsWith('.') || specifier.startsWith('/') ||
-                      specifier.startsWith('node:') || builtins.has(specifier)) continue;
-                  external.add(specifier);
-                }
-              }
-            }
-          }
-
-          walk('.');
-
-          if (external.size) {
-            console.error('External packages detected without package.json:', [...external].join(', '));
-            process.exit(1);
-          }
-
-          console.log('No external npm dependencies were found; npm installation is not necessary.');
-          NODE
-          fi
-
-      - name: Check JavaScript syntax
-        run: |
-          find . -type f -name '*.js' \
-            -not -path './node_modules/*' \
-            -not -path './.git/*' -print0 |
-          while IFS= read -r -d '' file; do
-            echo "Checking $file"
-            node --check "$file" || exit 1
-          done
-
-      - name: Initialize and verify SQLite database
-        run: |
-          node <<'NODE'
-          const fs = require('node:fs');
-          const os = require('node:os');
-          const path = require('node:path');
-          const { Database } = require('./database');
-
-          const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'careerconnect-ci-'));
-          let database;
-
-          try {
-            database = new Database(path.join(tempDir, 'ci.sqlite'));
-
-            const result = database.sql.prepare('PRAGMA integrity_check').get();
-
-            if (result.integrity_check !== 'ok') {
-              throw new Error('SQLite integrity check failed: ' + result.integrity_check);
-            }
-
-            const actualTables = new Set(
-              database.sql.prepare("SELECT name FROM sqlite_master WHERE type='table'")
-                .all().map(row => row.name)
-            );
-
-            const expectedTables = [
-              'users', 'profiles', 'jobs', 'resumes',
-              'applications', 'saved_jobs', 'sessions', 'migrations'
-            ];
-
-            for (const table of expectedTables) {
-              if (!actualTables.has(table)) {
-                throw new Error('Missing database table: ' + table);
-              }
-            }
-
-            const count = database.sql.prepare('SELECT COUNT(*) AS count FROM jobs').get().count;
-
-            if (count !== 6) {
-              throw new Error(`Expected 6 seeded jobs, found ${count}`);
-            }
-
-            console.log('SQLite passed: integrity OK, 8 expected tables, 6 seeded jobs.');
-          } finally {
-            database?.close();
-            fs.rmSync(tempDir, { recursive: true, force: true });
-          }
-          NODE
-
-      # Feature prerequisites belong in each test's setup, not in a story execution order:
-      # - Login: a registered account and database access; logout: an active session.
-      # - Profile editing: an existing profile; resume replacement/deletion: an uploaded file.
-      # - Job search, filters and details: job data.
-      # - Applying: a logged-in user, an existing job and an uploaded resume to submit.
-      # - Submitted applications: existing records, returned only for the logged-in seeker.
-      # Tests should create their own data and temporary databases where needed.
-      # These prerequisites do not require separate jobs or GitHub Actions needs rules.
-      - name: Run automated tests
-        run: node --test tests/*.test.js
+      - name: Run automated tests against isolated PostgreSQL
+        run: npm test

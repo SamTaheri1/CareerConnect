@@ -4,16 +4,14 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 
-const { Database } = require("../database");
+const { createTestDatabase } = require("./postgres-helper");
 
-function setup() {
+async function setup() {
   const directory = fs.mkdtempSync(
     path.join(os.tmpdir(), "careerconnect-notes-")
   );
 
-  const database = new Database(
-    path.join(directory, "test.sqlite")
-  );
+  const database = await createTestDatabase();
 
   const seeker = {
     id: "test-seeker",
@@ -37,13 +35,13 @@ function setup() {
   };
 
   for (const user of [seeker, otherSeeker, recruiter]) {
-    database.add({
+    (await database.add({
       user,
       salt: "test-salt",
       passwordHash: "test-hash"
-    });
+    }));
   }
-database.sql.prepare(`
+(await database.sql.prepare(`
   INSERT INTO resumes
   (id, user_id, name, size, content, created_at)
   VALUES (?, ?, ?, ?, ?, ?)
@@ -54,15 +52,15 @@ database.sql.prepare(`
   Buffer.byteLength("%PDF-1.4 test"),
   Buffer.from("%PDF-1.4 test"),
   new Date().toISOString()
-);
-  database.sql.prepare(`
+));
+  (await database.sql.prepare(`
     INSERT INTO applications
     (id, job_id, user_id, resume_id, name, email,
      note, profile, resume_name, status, created_at, history)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     "application-1",
-    database.state(seeker).jobs[0].id,
+    (await database.state(seeker)).jobs[0].id,
     seeker.id,
     "test-resume",
     seeker.name,
@@ -73,7 +71,7 @@ database.sql.prepare(`
     "Applied",
     new Date().toISOString(),
     "[]"
-  );
+  ));
 
   return {
     database,
@@ -81,22 +79,22 @@ database.sql.prepare(`
     seeker,
     otherSeeker,
     recruiter,
-    cleanup() {
-      database.close();
+    async cleanup() {
+      (await database.close());
       fs.rmSync(directory, { recursive: true, force: true });
     }
   };
 }
 
-test("AT-17.1: Job seeker can add an application note", () => {
-  const ctx = setup();
+test("AT-17.1: Job seeker can add an application note", async () => {
+  const ctx = await setup();
 
   try {
-    const note = ctx.database.addApplicationNote(
+    const note = (await ctx.database.addApplicationNote(
       ctx.seeker,
       "application-1",
       "Follow up with recruiter next week."
-    );
+    ));
 
     assert.ok(note.id);
     assert.equal(
@@ -104,143 +102,143 @@ test("AT-17.1: Job seeker can add an application note", () => {
       "Follow up with recruiter next week."
     );
 
-    const notes = ctx.database.getApplicationNotes(
+    const notes = (await ctx.database.getApplicationNotes(
       ctx.seeker,
       "application-1"
-    );
+    ));
 
     assert.equal(notes.length, 1);
     assert.equal(notes[0].content, note.content);
 
   } finally {
-    ctx.cleanup();
+    await ctx.cleanup();
   }
 });
 
-test("AT-17.2: Job seeker can edit an application note", () => {
-  const ctx = setup();
+test("AT-17.2: Job seeker can edit an application note", async () => {
+  const ctx = await setup();
 
   try {
-    const note = ctx.database.addApplicationNote(
+    const note = (await ctx.database.addApplicationNote(
       ctx.seeker,
       "application-1",
       "Original note"
-    );
+    ));
 
-    ctx.database.updateApplicationNote(
+    (await ctx.database.updateApplicationNote(
       ctx.seeker,
       note.id,
       "Updated note"
-    );
+    ));
 
-    const notes = ctx.database.getApplicationNotes(
+    const notes = (await ctx.database.getApplicationNotes(
       ctx.seeker,
       "application-1"
-    );
+    ));
 
     assert.equal(notes.length, 1);
     assert.equal(notes[0].content, "Updated note");
 
   } finally {
-    ctx.cleanup();
+    await ctx.cleanup();
   }
 });
 
-test("AT-17.2: Job seeker can delete an application note", () => {
-  const ctx = setup();
+test("AT-17.2: Job seeker can delete an application note", async () => {
+  const ctx = await setup();
 
   try {
-    const note = ctx.database.addApplicationNote(
+    const note = (await ctx.database.addApplicationNote(
       ctx.seeker,
       "application-1",
       "Delete this note"
-    );
+    ));
 
-    ctx.database.deleteApplicationNote(
+    (await ctx.database.deleteApplicationNote(
       ctx.seeker,
       note.id
-    );
+    ));
 
-    const notes = ctx.database.getApplicationNotes(
+    const notes = (await ctx.database.getApplicationNotes(
       ctx.seeker,
       "application-1"
-    );
+    ));
 
     assert.equal(notes.length, 0);
 
   } finally {
-    ctx.cleanup();
+    await ctx.cleanup();
   }
 });
 
-test("AT-17.3: Other users cannot access private notes", () => {
-  const ctx = setup();
+test("AT-17.3: Other users cannot access private notes", async () => {
+  const ctx = await setup();
 
   try {
-    const note = ctx.database.addApplicationNote(
+    const note = (await ctx.database.addApplicationNote(
       ctx.seeker,
       "application-1",
       "Private application note"
-    );
+    ));
 
-    assert.throws(
-      () => ctx.database.getApplicationNotes(
+    await assert.rejects(
+      async () => (await ctx.database.getApplicationNotes(
         ctx.otherSeeker,
         "application-1"
-      ),
+      )),
       error => error.status === 404
     );
 
-    assert.throws(
-      () => ctx.database.updateApplicationNote(
+    await assert.rejects(
+      async () => (await ctx.database.updateApplicationNote(
         ctx.otherSeeker,
         note.id,
         "Unauthorized edit"
-      ),
+      )),
       error => error.status === 404
     );
 
-    assert.throws(
-      () => ctx.database.deleteApplicationNote(
+    await assert.rejects(
+      async () => (await ctx.database.deleteApplicationNote(
         ctx.otherSeeker,
         note.id
-      ),
+      )),
       error => error.status === 404
     );
 
-    assert.throws(
-      () => ctx.database.getApplicationNotes(
+    await assert.rejects(
+      async () => (await ctx.database.getApplicationNotes(
         ctx.recruiter,
         "application-1"
-      ),
+      )),
       error => error.status === 403
     );
 
   } finally {
-    ctx.cleanup();
+    await ctx.cleanup();
   }
 });
 
-test("AT-17.3: Notes remain associated with their application", () => {
-  const ctx = setup();
+test("AT-17.3: Notes remain associated with their application", async () => {
+  const ctx = await setup();
 
   try {
-    ctx.database.addApplicationNote(
+    (await ctx.database.addApplicationNote(
       ctx.seeker,
       "application-1",
       "Interview scheduled"
-    );
+    ));
 
-    ctx.database.addApplicationNote(
+    (await ctx.database.addApplicationNote(
       ctx.seeker,
       "application-1",
       "Prepare interview questions"
-    );
+    ));
 
-    const notes = ctx.database.getApplicationNotes(
+    const notes = (await ctx.database.getApplicationNotes(
       ctx.seeker,
       "application-1"
-    );
+    ));
 
     assert.equal(notes.length, 2);
 
@@ -249,6 +247,6 @@ test("AT-17.3: Notes remain associated with their application", () => {
     }
 
   } finally {
-    ctx.cleanup();
+    await ctx.cleanup();
   }
 });

@@ -1,11 +1,12 @@
-PRAGMA foreign_keys = ON;
-PRAGMA journal_mode = WAL;
-PRAGMA busy_timeout = 5000;
+-- Private server-only schema: never expose password hashes or sessions via the Data API.
+CREATE SCHEMA IF NOT EXISTS careerconnect;
+REVOKE ALL ON SCHEMA careerconnect FROM PUBLIC;
+SET LOCAL search_path = careerconnect, pg_catalog;
 
 CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
-  email TEXT NOT NULL COLLATE NOCASE UNIQUE,
+  email TEXT NOT NULL UNIQUE CHECK (email = lower(email)),
   role TEXT NOT NULL CHECK (role IN ('seeker', 'recruiter')),
   salt TEXT NOT NULL,
   password_hash TEXT NOT NULL
@@ -23,7 +24,7 @@ CREATE TABLE IF NOT EXISTS jobs (
   owner_id TEXT REFERENCES users(id),
   title TEXT NOT NULL, company TEXT NOT NULL, location TEXT NOT NULL,
   type TEXT NOT NULL, arrangement TEXT NOT NULL, level TEXT NOT NULL,
-  category TEXT NOT NULL, min REAL NOT NULL, max REAL NOT NULL CHECK (max >= min),
+  category TEXT NOT NULL, min DOUBLE PRECISION NOT NULL, max DOUBLE PRECISION NOT NULL CHECK (max >= min),
   description TEXT NOT NULL, responsibilities TEXT NOT NULL, requirements TEXT NOT NULL,
   tags TEXT NOT NULL, initials TEXT NOT NULL, color TEXT NOT NULL,
   status TEXT NOT NULL CHECK (status IN ('Open', 'Closed')),
@@ -33,7 +34,7 @@ CREATE TABLE IF NOT EXISTS resumes (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL REFERENCES users(id),
   name TEXT NOT NULL, size INTEGER NOT NULL CHECK (size > 0 AND size <= 5242880),
-  content BLOB NOT NULL, created_at TEXT NOT NULL,
+  content BYTEA NOT NULL, created_at TEXT NOT NULL,
   listed INTEGER NOT NULL DEFAULT 0 CHECK (listed IN (0, 1))
 );
 CREATE TABLE IF NOT EXISTS applications (
@@ -71,9 +72,25 @@ CREATE TABLE IF NOT EXISTS saved_jobs (
 CREATE TABLE IF NOT EXISTS sessions (
   token TEXT PRIMARY KEY,
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  expires_at INTEGER NOT NULL
+  expires_at BIGINT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS migrations (name TEXT PRIMARY KEY);
 CREATE INDEX IF NOT EXISTS jobs_owner ON jobs(owner_id);
 CREATE INDEX IF NOT EXISTS resumes_user ON resumes(user_id);
 CREATE INDEX IF NOT EXISTS applications_job ON applications(job_id);
+
+CREATE INDEX IF NOT EXISTS applications_user ON applications(user_id);
+CREATE INDEX IF NOT EXISTS sessions_expiry ON sessions(expires_at);
+CREATE UNIQUE INDEX IF NOT EXISTS applications_resume ON applications(resume_id);
+REVOKE ALL ON ALL TABLES IN SCHEMA careerconnect FROM PUBLIC;
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
+    REVOKE ALL ON SCHEMA careerconnect FROM anon;
+    REVOKE ALL ON ALL TABLES IN SCHEMA careerconnect FROM anon;
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+    REVOKE ALL ON SCHEMA careerconnect FROM authenticated;
+    REVOKE ALL ON ALL TABLES IN SCHEMA careerconnect FROM authenticated;
+  END IF;
+END $$;
+INSERT INTO migrations(name) VALUES ('001-initial') ON CONFLICT DO NOTHING;

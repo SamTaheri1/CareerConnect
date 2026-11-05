@@ -1,6 +1,6 @@
 # CareerConnect
 
-SQLite storage: run `node server.js` to create the database automatically. Users, profiles, resume files, jobs, applications, saved jobs, and preparation checklists persist on the server. See [database setup](docs/database.md).
+Shared Supabase PostgreSQL storage: users, profiles, resume files, jobs, applications, saved jobs, notes, and preparation checklists persist in the same remote database across checkouts. See [database setup](docs/database.md).
 
 ## Project description 
 CareerConnect is a website made to help people stay organized while looking for a job. Instead of having job applications, resumes, and updates all over the place, users can keep everything together on one website. They will be able to make a profile, upload their resume, look for jobs, apply, and see what is happening with each application. Recruiters can also post jobs and look through the applications they receive. The main idea is to make job searching easier to keep track of and less messy.
@@ -27,8 +27,6 @@ Our solution is to create a website called CareerConnect that helps job seekers 
 •	Generative AI tools such as ChatGPT, Codex, Claude, Claude Code, and Antigravity  
 
 *We may use other technologies later if we need them as the project develops.*
-
-## Setup Instructions
 
 ## Setup Instructions
 
@@ -66,11 +64,7 @@ Replace REPOSITORY with your project folder name.
 
 ### Step 4: Install dependencies
 
-If the project has a package.json file containing external dependencies, enter:
-
-`npm install`
-
-If there are no external dependencies, this step can be skipped.
+Run `npm ci` to install the locked dependencies.
 
 ### Step 5: Configure the environment
 
@@ -82,7 +76,9 @@ On Windows Command Prompt, enter:
 
 `copy .env.example .env`
 
-Review the `.env` file and adjust the configuration if necessary.
+Do not overwrite an existing `.env`. Set `DATABASE_URL` to your Supabase **Connect > Session pooler** PostgreSQL URI, including the database password. Keep it private. The public publishable key is not a database connection string. See [database setup](docs/database.md) for verified TLS certificate configuration.
+
+On the first setup only, run `npm run db:setup`. To transfer the existing local data into an empty target, stop the old server and run `npm run db:import -- data/careerconnect.sqlite`. Then run `npm run db:check`. Other checkouts use the same remote database without importing again.
 
 ### Step 6: Start the server
 
@@ -90,7 +86,7 @@ Enter:
 
 `node server.js`
 
-The SQLite database will be created automatically if it does not exist.
+The server connects to Supabase. Missing credentials or schema cause startup to fail; no local database is created.
 
 ### Step 7: Open the website
 
@@ -104,12 +100,13 @@ The CareerConnect website should now be running.
 
 Enter:
 
-`node --test tests/*.test.js`
+`npm test`
 
 ### Additional Information
 
-- SQLite is built into Node.js 24, so no separate database installation is required.
-- The database is saved by default at `data/careerconnect.sqlite`.
+- Data lives in Supabase, not GitHub or a local database file.
+- Each developer needs a private `.env` pointing to the same Supabase project.
+- Tests use an isolated PostgreSQL engine and do not modify shared Supabase records.
 - For further details, see [Database Setup](docs/database.md) and [Registration Backend](docs/registration-backend.md).
 
 ## Proposed Features

@@ -12,7 +12,7 @@ function createRegisterHandler({ store, config }) {
     const user = { id: randomUUID(), name, email, role: data.role };
     const salt = randomBytes(16).toString("hex");
     const passwordHash = await hashPassword(password, salt, config);
-    if (!store.add({ user, salt, passwordHash })) {
+    if (!(await store.add({ user, salt, passwordHash }))) {
       throw { status: 409, message: "An account with this email already exists. Please log in." };
     }
     return { status: 201, message: "Account created.", user };

@@ -1,0 +1,21 @@
+{
+  "dependencies": {
+    "@supabase/ssr": "^0.12.7",
+    "@supabase/supabase-js": "^2.119.0",
+    "pg": "^8.23.1"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.15"
+  },
+  "private": true,
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test --test-concurrency=1 tests/*.test.js",
+    "db:setup": "node scripts/setup-database.js",
+    "db:check": "node scripts/check-database.js",
+    "db:import": "node scripts/import-sqlite.js"
+  }
+}

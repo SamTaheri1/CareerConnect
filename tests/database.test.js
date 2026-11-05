@@ -1,20 +1,18 @@
-const { test } = require("node:test");
+const { test, after } = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const { createServer } = require("../server");
-const { Database } = require("../database");
-const { hashPassword } = require("../auth/password");
-const { loadConfig } = require("../config");
+const { createServer, closeStores } = require("./postgres-helper");
+after(closeStores);
 
-test("SQLite saves profiles, jobs, resumes and applications across a full restart", async () => {
+test("PostgreSQL saves profiles, jobs, resumes and applications across API server instances", async () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "careerconnect-sqlite-"));
   const databaseFile = path.join(directory, "nested", "site.sqlite");
   let server;
   let origin;
   async function start() {
-    server = createServer({ databaseFile });
+    server = await createServer({ databaseFile });
     await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
     origin = `http://127.0.0.1:${server.address().port}`;
   }
@@ -94,29 +92,6 @@ test("SQLite saves profiles, jobs, resumes and applications across a full restar
     assert.equal((await request("state", undefined, seeker.cookie)).body.sessionId, null);
   } finally {
     if (server) await new Promise(resolve => server.close(resolve));
-    fs.rmSync(directory, { recursive: true, force: true });
-  }
-});
-
-test("existing JSON accounts are imported once without changing their password hashes", async () => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "careerconnect-import-"));
-  const filename = path.join(directory, "site.sqlite");
-  const legacy = path.join(directory, "users.json");
-  const account = { user: { id: "legacy-user", name: "Legacy", email: "legacy@example.com", role: "seeker" }, salt: "legacy-salt" };
-  account.passwordHash = await hashPassword("original-password", account.salt, loadConfig());
-  fs.writeFileSync(legacy, JSON.stringify({ users: [account] }));
-  let database;
-  try {
-    database = new Database(filename, legacy);
-    assert.deepEqual(database.findByEmail(account.user.email), account);
-    database.close();
-    database = new Database(filename, legacy);
-    assert.equal(database.sql.prepare("SELECT count(*) AS count FROM users").get().count, 1);
-    assert.equal(database.state(account.user).users[0].profile.bio, "");
-    assert.equal(JSON.parse(fs.readFileSync(legacy, "utf8")).users.length, 1);
-    assert.throws(() => database.sql.prepare("INSERT INTO saved_jobs VALUES ('missing', 'job-1')").run(), /FOREIGN KEY/);
-  } finally {
-    database?.close();
     fs.rmSync(directory, { recursive: true, force: true });
   }
 });

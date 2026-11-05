@@ -31,10 +31,10 @@ async function readJsonBody(request, maximumBytes) {
   }
 }
 
-function createServer(options = {}) {
+async function createServer(options = {}) {
   const config = { ...loadConfig(), ...options.config };
-  const store = new Database(options.databaseFile || options.dataFile || config.databaseFile,
-    options.databaseFile || options.dataFile ? options.legacyFile : config.userDataFile);
+  const store = options.store || new Database(config);
+  try { await store.initialize(); } catch (error) { await store.close(); throw error; }
   const limiter = new AuthRateLimiter(config);
   const api = {
     [`${config.apiBasePath}/register`]: createRegisterHandler({ store, config }),
@@ -52,29 +52,29 @@ function createServer(options = {}) {
         }
       }
       if (url.pathname === `${config.apiBasePath}/state`) {
-        const person = store.session(request);
-        if (request.method === "GET") return json(response, 200, store.state(person));
+        const person = (await store.session(request));
+        if (request.method === "GET") return json(response, 200, (await store.state(person)));
         if (request.method !== "POST") return json(response, 405, { message: "Use GET or POST." });
         const changes = await readJsonBody(request, 2 * 1024 * 1024);
         if ((changes.jobs && !Array.isArray(changes.jobs)) || (changes.applications && !Array.isArray(changes.applications))) return json(response, 400, { message: "Invalid changes." });
-        store.save(person, changes);
-        const updated = store.session(request);
-        return json(response, 200, store.state(updated));
+        (await store.save(person, changes));
+        const updated = (await store.session(request));
+        return json(response, 200, (await store.state(updated)));
       }
       if (url.pathname === `${config.apiBasePath}/files`) {
-        const person = store.session(request);
+        const person = (await store.session(request));
         if (request.method === "GET") {
-          const file = store.file(person, "get", url.searchParams.get("id"));
+          const file = (await store.file(person, "get", url.searchParams.get("id")));
           response.writeHead(200, { "Content-Type": "application/octet-stream", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" });
           return response.end(Buffer.from(file.content));
         }
         if (request.method !== "POST") return json(response, 405, { message: "Use GET or POST." });
         const data = await readJsonBody(request, 7 * 1024 * 1024 + 4096);
-        store.file(person, data.action, data.id, data);
+        (await store.file(person, data.action, data.id, data));
         return json(response, 200, { message: "Resume saved." });
       }
            if (url.pathname === `${config.apiBasePath}/application-notes`) {
-        const person = store.session(request);
+        const person = (await store.session(request));
 
         if (!person) {
           return json(response, 401, { message: "Please log in." });
@@ -82,33 +82,33 @@ function createServer(options = {}) {
 
         if (request.method === "GET") {
           const applicationId = url.searchParams.get("applicationId");
-          const notes = store.getApplicationNotes(person, applicationId);
+          const notes = (await store.getApplicationNotes(person, applicationId));
           return json(response, 200, { notes });
         }
 
         if (request.method === "POST") {
           const data = await readJsonBody(request, 2 * 1024 * 1024);
-          const result = store.addApplicationNote(
+          const result = (await store.addApplicationNote(
             person,
             data.applicationId,
             data.content
-          );
+          ));
           return json(response, 201, result);
         }
 
         if (request.method === "PUT") {
           const data = await readJsonBody(request, 2 * 1024 * 1024);
-          const result = store.updateApplicationNote(
+          const result = (await store.updateApplicationNote(
             person,
             data.noteId,
             data.content
-          );
+          ));
           return json(response, 200, result);
         }
 
         if (request.method === "DELETE") {
           const data = await readJsonBody(request, 2 * 1024 * 1024);
-          const result = store.deleteApplicationNote(person, data.noteId);
+          const result = (await store.deleteApplicationNote(person, data.noteId));
           return json(response, 200, result);
         }
 
@@ -118,7 +118,7 @@ function createServer(options = {}) {
       }
       if (url.pathname === `${config.apiBasePath}/logout`) {
         if (request.method !== "POST") return json(response, 405, { message: "Use POST." });
-        store.endSession(request);
+        (await store.endSession(request));
         response.setHeader("Set-Cookie", "careerconnect_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0");
         return json(response, 200, { message: "Logged out." });
       }
@@ -130,8 +130,8 @@ function createServer(options = {}) {
         }
         const result = await handler(await readJsonBody(request, config.requestMaxBytes), request);
         if (result.user) {
-          store.endSession(request);
-          response.setHeader("Set-Cookie", store.startSession(result.user.id));
+          (await store.endSession(request));
+          response.setHeader("Set-Cookie", (await store.startSession(result.user.id)));
         }
         return json(response, result.status, result);
       }
@@ -151,17 +151,20 @@ function createServer(options = {}) {
       response.end(request.method === "HEAD" ? undefined : content);
     } catch (error) {
       const status = Number.isInteger(error.status) ? error.status : 500;
-      if (status === 500) console.error("Request failed:", error);
+      if (status === 500) console.error("Request failed:", error.code || "internal error");
       if (!response.headersSent) json(response, status, { message: status === 500 ? "Something went wrong. Please try again." : error.message });
     }
   });
-  server.on("close", () => store.close());
+  server.on("close", () => { if (!options.store) store.close().catch(() => console.error("Database close failed.")); });
   return server;
 }
 
 if (require.main === module) {
   const config = loadConfig();
-  createServer({ config }).listen(config.port, config.host, () => console.log(`CareerConnect: http://${config.host}:${config.port}`));
+  createServer({ config }).then(server => server.listen(config.port, config.host, () => console.log(`CareerConnect: http://${config.host}:${config.port}`))).catch(error => {
+    console.error(error.message?.startsWith("Set DATABASE_URL") || error.message?.startsWith("Run npm") ? error.message : "Supabase connection failed. Check DATABASE_URL, TLS certificate, and run npm run db:setup.");
+    process.exitCode = 1;
+  });
 }
 
 module.exports = { createServer };

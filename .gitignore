@@ -6,3 +6,7 @@ data/*.tmp
 data/*.sqlite
 data/*.sqlite-wal
 data/*.sqlite-shm
+
+node_modules/
+*.pem
+*.crt

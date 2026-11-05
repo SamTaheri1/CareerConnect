@@ -34,8 +34,8 @@ function loadConfig() {
     host: env.HOST || "127.0.0.1",
     port: positiveInteger(env.PORT, 3000),
     apiBasePath,
-    userDataFile: path.resolve(__dirname, env.USER_DATA_FILE || "data/users.json"),
-    databaseFile: path.resolve(__dirname, env.DATABASE_FILE || "data/careerconnect.sqlite"),
+    databaseUrl: env.DATABASE_URL || "",
+    databaseCaFile: env.DATABASE_CA_FILE ? path.resolve(__dirname, env.DATABASE_CA_FILE) : "",
     scryptN: scryptCost(env.PASSWORD_SCRYPT_N),
     passwordKeyLength: (() => {
       const length = positiveInteger(env.PASSWORD_KEY_LENGTH, 64);

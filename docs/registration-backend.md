@@ -20,7 +20,7 @@ Open the address printed by the server (the default is http://127.0.0.1:3000). U
 
 ## Configuration
 
-The server reads `.env` at startup. Do not commit a local `.env`; use `.env.example` as the documented safe template. `HOST`, `PORT`, `API_BASE_PATH`, `DATABASE_FILE`, `USER_DATA_FILE`, `PASSWORD_SCRYPT_N`, `PASSWORD_KEY_LENGTH`, `AUTH_MAX_ATTEMPTS`, `AUTH_WINDOW_MS`, and `REQUEST_MAX_BYTES` are configuration values, not hard-coded application settings. Keep the account file outside publicly served files and restrict access to it.
+The server reads `.env` at startup. Do not commit a local `.env`; use `.env.example` as the documented safe template. `HOST`, `PORT`, `API_BASE_PATH`, `DATABASE_URL`, `DATABASE_CA_FILE`, `PASSWORD_SCRYPT_N`, `PASSWORD_KEY_LENGTH`, `AUTH_MAX_ATTEMPTS`, `AUTH_WINDOW_MS`, and `REQUEST_MAX_BYTES` are configuration values, not hard-coded application settings. Keep database credentials server-only and out of Git.
 
 The browser receives only `API_BASE_PATH` through `/config.js`; it never receives storage paths or password-hashing settings. Restart the server after changing `.env`.
 
@@ -35,7 +35,7 @@ The optional resume-feedback feature calls the OpenAI Responses API from the ser
 | 1.3 Add form validation | Browser validation implemented | Browser validation plus backend validation |
 | 1.4 Create backend registration endpoint | Not implemented | POST `{API_BASE_PATH}/register` implemented |
 | 1.5 Connect frontend to backend | Not implemented | Registration and login use the configured Node API path |
-| 1.6 Store user information in database | Browser storage only, no server database | SQLite account storage with automatic JSON import |
+| 1.6 Store user information in database | Browser storage only, no server database | Shared Supabase PostgreSQL account storage |
 | 1.7 Test successful registration | Browser-only flow tested | Backend automated tests and connected browser flow passed |
 | 1.8 Test invalid registration | Browser validation tested | Backend rejection tests and connected browser error checks passed |
 
@@ -47,7 +47,7 @@ POST `{API_BASE_PATH}/login` accepts email and password. Success returns 200 wit
 
 ## Account storage
 
-Accounts are stored in SQLite. The server creates the database and tables at startup and imports existing JSON accounts once. Password hashing and validation are unchanged. Registration and login set an HttpOnly session cookie; session records are stored in SQLite and expire after seven days. Logout removes the session.
+Accounts are stored in the private `careerconnect` schema in Supabase PostgreSQL. Run `npm run db:setup` once; the server does not create a local database. See `docs/database.md` for the explicit one-time legacy import. Password hashing and validation are unchanged. Registration and login set an HttpOnly session cookie; session records are stored in Supabase PostgreSQL and expire after seven days. Logout removes the session.
 
 Profiles, resumes, jobs, applications, saved jobs, and preparation checklists now use the server API. The server enforces account ownership and recruiter/job-seeker permissions. See [database setup and relationships](database.md) for configuration, endpoints, and migration details.
 
@@ -59,4 +59,4 @@ node --test tests/*.test.js
 
 Automated tests cover both roles, normalization, missing/blank/invalid/oversized fields, invalid roles, duplicate emails, malformed JSON, wrong methods/content types, request size limit, successful/failed login, persistence between server instances, absence of plaintext passwords in storage, configurable API paths, and static-file allowlisting.
 
-SQLite integration tests also cover a complete server shutdown and restart, profile and job saves, resume replacement and deletion, immutable submitted copies, application history, transaction rollback, logout, and access restrictions. The existing resume workflow and preview tests remain in place.
+PostgreSQL integration tests also cover a complete server shutdown and restart, profile and job saves, resume replacement and deletion, immutable submitted copies, application history, transaction rollback, logout, and access restrictions. The existing resume workflow and preview tests remain in place.
