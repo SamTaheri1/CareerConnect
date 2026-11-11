@@ -1,12 +1,1 @@
-.env
-.env.*
-!.env.example
-data/users.json
-data/*.tmp
-data/*.sqlite
-data/*.sqlite-wal
-data/*.sqlite-shm
-
-node_modules/
-*.pem
-*.crt
+##removed temporarily
