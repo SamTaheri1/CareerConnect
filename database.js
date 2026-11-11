@@ -94,7 +94,9 @@ class Database {
         for (const key of jobLists) {
           if (!Array.isArray(job[key]) || job[key].length > 100 || job[key].some(value => typeof value !== "string" || value.length > 2000)) fail(`Enter valid ${key}.`);
         }
-        if (!job.responsibilities.length || !job.requirements.length) fail("Complete the job responsibilities and requirements.");
+        if (!job.responsibilities.some(value => value.trim()) || !job.requirements.some(value => value.trim())) {
+          fail("Complete the job responsibilities and requirements.");
+        }
         if (!["Open", "Closed"].includes(job.status) || !Number.isFinite(job.min) || !Number.isFinite(job.max) || job.min < 0 || job.max < job.min) fail("Enter valid job details and salary.");
         if (!/^\d{4}-\d{2}-\d{2}$/.test(job.deadline) || !Number.isFinite(Date.parse(job.deadline))) fail("Enter a valid deadline.");
         if (job.status === "Open" && job.deadline < new Date().toISOString().slice(0, 10)) fail("Choose today or a future date for the deadline.");
