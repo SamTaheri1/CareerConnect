@@ -826,6 +826,9 @@ nav a.active:after {
   gap: 15px;
   margin-bottom: 25px;
 }
+.application-stats {
+  grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
+}
 .stat {
   border: 1px solid var(--line);
   border-radius: 10px;
@@ -847,6 +850,29 @@ nav a.active:after {
   align-items: center;
   justify-content: space-between;
   margin-bottom: 20px;
+}
+.candidate-toolbar {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 20px;
+}
+.candidate-filters {
+  display: flex;
+  align-items: end;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.candidate-filters label {
+  min-width: 150px;
+  font-size: 12px;
+}
+.candidate-filters select,
+.candidate-filters input {
+  margin-top: 5px;
+  min-width: 150px;
 }
 .toolbar select {
   max-width: 220px;
@@ -885,6 +911,10 @@ nav a.active:after {
 .status.interview {
   background: #fff1d6;
   color: #886013;
+}
+.status.under-review {
+  background: #e7eef8;
+  color: #405b83;
 }
 .status.offered {
   background: #e3f1e3;
@@ -1319,6 +1349,20 @@ dialog h2 {
   }
   .toolbar select {
     max-width: 100%;
+  }
+  .candidate-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .candidate-filters {
+    align-items: stretch;
+    justify-content: flex-start;
+  }
+  .candidate-filters label,
+  .candidate-filters select,
+  .candidate-filters input,
+  .candidate-filters .btn {
+    width: 100%;
   }
   footer {
     flex-wrap: wrap;
