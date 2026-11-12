@@ -1,5 +1,6 @@
 const { Database } = require("../database");
 const { loadConfig } = require("../config");
+const { databaseError } = require("../database-error");
 async function main() {
   const db = new Database(loadConfig());
   try {
@@ -12,6 +13,6 @@ async function main() {
   } finally { await db.close(); }
 }
 main().catch(error => {
-  console.error("Database check failed:", error.code || "check DATABASE_URL and run npm run db:setup");
+  console.error(databaseError(error));
   process.exitCode = 1;
 });

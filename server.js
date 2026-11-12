@@ -2,6 +2,7 @@ const http = require("node:http");
 const path = require("node:path");
 const { readFile } = require("node:fs/promises");
 const { loadConfig } = require("./config");
+const { databaseError } = require("./database-error");
 const { Database } = require("./database");
 const { createLoginHandler } = require("./auth/login");
 const { createRegisterHandler } = require("./auth/register");
@@ -162,7 +163,7 @@ async function createServer(options = {}) {
 if (require.main === module) {
   const config = loadConfig();
   createServer({ config }).then(server => server.listen(config.port, config.host, () => console.log(`CareerConnect: http://${config.host}:${config.port}`))).catch(error => {
-    console.error(error.message?.startsWith("Set DATABASE_URL") || error.message?.startsWith("Run npm") ? error.message : "Supabase connection failed. Check DATABASE_URL, TLS certificate, and run npm run db:setup.");
+    console.error(databaseError(error));
     process.exitCode = 1;
   });
 }

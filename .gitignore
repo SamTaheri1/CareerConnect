@@ -1,1 +1,19 @@
-##removed temporarily
+# Private environment configuration
+.env
+.env.*
+!.env.example
+
+# Installed dependencies and local legacy data
+node_modules/
+data/users.json
+data/*.tmp
+data/*.sqlite
+data/*.sqlite-wal
+data/*.sqlite-shm
+
+# Private keys and other certificates; share only the verified public Supabase CA
+*.key
+*.pem
+*.crt
+*.cer
+!prod-ca-2021.crt

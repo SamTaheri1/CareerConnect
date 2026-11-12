@@ -1,5 +1,9 @@
 # CareerConnect
 
+**Team members cloning this repository:** follow [TEAM_SETUP.md](TEAM_SETUP.md).
+Run `npm ci`, then `npm run setup`, fill in your private `.env`, and run
+`npm run doctor` before `npm start`. GitHub does not distribute credentials.
+
 Shared Supabase PostgreSQL storage: users, profiles, resume files, jobs, applications, saved jobs, notes, and preparation checklists persist in the same remote database across checkouts. See [database setup](docs/database.md).
 
 ## Project description 

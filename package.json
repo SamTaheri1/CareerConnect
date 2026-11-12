@@ -12,6 +12,8 @@
     "node": ">=24"
   },
   "scripts": {
+    "setup": "node scripts/setup-local.js",
+    "doctor": "node scripts/doctor.js",
     "start": "node server.js",
     "test": "node --test --test-concurrency=1 tests/*.test.js",
     "db:setup": "node scripts/setup-database.js",

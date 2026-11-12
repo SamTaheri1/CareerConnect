@@ -6,14 +6,43 @@ each checkout connects to the same Supabase project to see the same saved data.
 
 ## First-time setup
 
+### Teammates joining the existing shared database
+
+For the short, cross-platform walkthrough and Codex instructions, see
+[TEAM_SETUP.md](../TEAM_SETUP.md). `npm run setup` creates a missing `.env` safely;
+`npm run doctor` verifies configuration and remote connectivity without writes.
+
+Install Node.js 24 or newer, pull the latest code and public `prod-ca-2021.crt`
+certificate, then run `npm ci` from the folder containing `package.json`.
+Copy `.env.example` to `.env` only if you do not already have an `.env`.
+Obtain the project's `DATABASE_URL` privately from a trusted team member and
+save it in your own `.env`. Keep the certificate setting relative:
+
+```dotenv
+DATABASE_URL="your-private-Supabase-PostgreSQL-connection-string"
+DATABASE_CA_FILE=prod-ca-2021.crt
+```
+
+Do not copy another developer's absolute `C:\...` certificate path. The public
+Supabase URL/key alone are not enough for this backend. Removing `.gitignore`
+rules does not distribute local files or configure another computer.
+
+Run `npm run db:check`, then `npm start`, and open `http://127.0.0.1:3000`.
+Existing accounts are in the shared database. Do not run `db:import` again.
+If either command fails, share just the error text, never the connection string.
+The OpenAI key is optional and only needed for the resume feedback feature.
+
+### Creating a new database (project maintainer only)
+
 1. Install Node.js 24+ and run `npm ci` in the repository root.
 2. Copy `.env.example` to `.env` only if `.env` does not already exist.
 3. In Supabase, select **Connect > Session pooler**. Put that connection string
    in `.env` as `DATABASE_URL`, replacing the password placeholder. URL-encode
    special characters in the password. Never share this value in Git or chat.
-4. Connections require verified TLS. If the certificate chain needs the
-   Supabase CA, download it from database settings and set `DATABASE_CA_FILE`
-   to its local path. Certificate verification is not disabled.
+4. Connections require verified TLS. The existing project uses the public
+   `prod-ca-2021.crt` certificate in the repository. For another project, obtain
+   its CA from Supabase database settings and set `DATABASE_CA_FILE` accordingly.
+   Certificate verification is not disabled.
 5. Run `npm run db:setup` once to create the private `careerconnect` schema.
    Re-running it preserves records. It does not insert sample jobs.
 6. To transfer the existing SQLite records, stop the old server and run
