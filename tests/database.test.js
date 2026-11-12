@@ -64,6 +64,7 @@ test("PostgreSQL saves profiles, jobs, resumes and applications across API serve
     assert.equal((await request("files", upload("resume-1", Buffer.from("%PDF-1.4 replaced").toString("base64")), seeker.cookie)).status, 200);
     assert.equal((await request("files?id=application-copy", undefined, recruiter.cookie)).body, "%PDF-1.4 original resume");
     assert.equal((await request("state", { applications: [{ ...application, status: "Offered" }] }, other.cookie)).status, 403);
+    assert.equal((await request("state", { applications: [{ ...application, status: "Under Review" }] }, recruiter.cookie)).status, 200);
     assert.equal((await request("state", { applications: [{ ...application, status: "Interview" }] }, recruiter.cookie)).status, 200);
     // A transaction with an invalid job must also roll back its profile changes.
     assert.equal((await request("state", { person: { ...person, name: "Not saved" }, jobs: [job] }, seeker.cookie)).status, 403);
@@ -83,7 +84,7 @@ test("PostgreSQL saves profiles, jobs, resumes and applications across API serve
     assert.equal(state.users[0].resumes.length, 0);
     assert.equal(state.jobs.find(item => item.id === job.id).title, "Database Developer");
     assert.equal(state.applications[0].status, "Interview");
-    assert.equal(state.applications[0].history.length, 2);
+    assert.equal(state.applications[0].history.length, 3);
     assert.equal((await request("files?id=application-copy", undefined, recruiter.cookie)).body, "%PDF-1.4 original resume");
     assert.equal((await request("state", undefined, other.cookie)).body.applications.length, 0);
     assert.equal((await request("state")).body.users.length, 0);

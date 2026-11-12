@@ -2,7 +2,7 @@ const { Postgres } = require("./postgres");
 const { randomBytes, createHash } = require("node:crypto");
 const { validateEmail } = require("./auth/validation");
 
-const statuses = ["Applied", "Interview", "Offered", "Rejected"];
+const statuses = ["Applied", "Under Review", "Interview", "Offered", "Rejected"];
 const profileFields = ["location", "phone", "company", "headline", "website", "bio", "skills"];
 const jobFields = ["title", "company", "location", "type", "arrangement", "level", "category", "min", "max", "description", "responsibilities", "requirements", "tags", "initials", "color", "status", "deadline"];
 const jobLists = ["responsibilities", "requirements", "tags"];

@@ -44,10 +44,14 @@ CREATE TABLE IF NOT EXISTS applications (
   resume_id TEXT NOT NULL REFERENCES resumes(id),
   name TEXT NOT NULL, email TEXT NOT NULL, note TEXT NOT NULL,
   profile TEXT NOT NULL, resume_name TEXT NOT NULL,
-  status TEXT NOT NULL CHECK (status IN ('Applied', 'Interview', 'Offered', 'Rejected')),
+  status TEXT NOT NULL CHECK (status IN ('Applied', 'Under Review', 'Interview', 'Offered', 'Rejected')),
   created_at TEXT NOT NULL, history TEXT NOT NULL,
   UNIQUE (user_id, job_id)
 );
+-- Keep existing Sprint 1/2 databases compatible with the Sprint 3 status list.
+ALTER TABLE applications DROP CONSTRAINT IF EXISTS applications_status_check;
+ALTER TABLE applications ADD CONSTRAINT applications_status_check
+  CHECK (status IN ('Applied', 'Under Review', 'Interview', 'Offered', 'Rejected'));
 CREATE TABLE IF NOT EXISTS application_notes (
   id TEXT PRIMARY KEY,
   application_id TEXT NOT NULL
@@ -94,3 +98,4 @@ DO $$ BEGIN
   END IF;
 END $$;
 INSERT INTO migrations(name) VALUES ('001-initial') ON CONFLICT DO NOTHING;
+INSERT INTO migrations(name) VALUES ('002-under-review-status') ON CONFLICT DO NOTHING;
