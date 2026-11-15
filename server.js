@@ -40,7 +40,7 @@ async function createServer(options = {}) {
   const api = {
     [`${config.apiBasePath}/register`]: createRegisterHandler({ store, config }),
     [`${config.apiBasePath}/login`]: createLoginHandler({ store, config, limiter }),
-    [`${config.apiBasePath}/resume-feedback`]: createResumeFeedbackHandler({ config, limiter, fetch: options.fetch }),
+    [`${config.apiBasePath}/resume-feedback`]: createResumeFeedbackHandler({ config, limiter, store, fetch: options.fetch }),
   };
   const files = { "/": ["index.html", "text/html"], "/index.html": ["index.html", "text/html"], "/styles.css": ["styles.css", "text/css"], "/data.js": ["data.js", "text/javascript"], "/app.js": ["app.js", "text/javascript"] };
 

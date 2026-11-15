@@ -447,10 +447,138 @@ function renderProfile(editing = false) {
   }
 }
 function renderResumeFeedback() {
-  shell(
-    `<a class="back-link" href="#profile">${icon("back")} Back to profile</a><div class="page-title"><div><div class="eyebrow">AI resume feedback</div><h1>Make your resume clearer.</h1><p>Paste the text you want reviewed. Your API key stays on the server and the feedback is not saved.</p></div></div><section class="panel"><form id="resume-feedback-form"><label>Target role <span class="hint">(optional)</span><input name="targetRole" maxlength="120" placeholder="e.g. Junior software developer"></label><label class="full">Resume text<textarea name="resumeText" required maxlength="8000" rows="18" placeholder="Paste your resume text here. Do not include information you would not want to send to an AI service."></textarea><span class="hint">Up to 8,000 characters. Review the result and make your own decisions.</span></label><p class="error" role="alert"></p><div class="form-actions"><button class="btn btn-primary">Get feedback ${icon("arrow")}</button></div></form><section id="resume-feedback-result" class="application-note" hidden aria-live="polite"></section></section>`,
-  );
+  const resumes = user().resumes || [];
+  const options = resumes.map(resume =>
+    `<option value="${e(resume.id)}">${e(resume.name)}</option>`
+  ).join("");
+  shell(`
+    <a class="back-link" href="#profile">${icon("back")} Back to profile</a>
+    <div class="page-title"><div><h1>AI resume feedback</h1></div></div>
+    <section class="panel">
+      ${resumes.length ? `
+        <form id="resume-feedback-form">
+          <label>Resume
+            <select name="resumeId" required>
+              <option value="">Choose an uploaded resume</option>
+              ${options}
+            </select>
+          </label>
+          <label>Target role <span class="hint">(optional)</span>
+            <input name="targetRole" maxlength="120" placeholder="e.g. Junior software developer">
+          </label>
+          <p class="hint">Get feedback sends the selected file to OpenAI for review.</p>
+          <p class="error" role="alert"></p>
+          <div class="form-actions"><button class="btn btn-primary">Get feedback ${icon("arrow")}</button></div>
+        </form>
+      ` : '<p>Upload a resume in <a href="#profile">My profile</a> to get feedback.</p>'}
+      <div id="resume-feedback-result" class="resume-feedback-result" aria-live="polite"></div>
+      <div id="saved-resume-feedback"></div>
+    </section>
+  `);
+  renderSavedResumeFeedback();
 }
+
+function readSavedResumeFeedback(key) {
+  try {
+    const entries = JSON.parse(localStorage.getItem(key) || "[]");
+    return Array.isArray(entries) ? entries : [];
+  } catch {
+    return [];
+  }
+}
+
+function renderSavedResumeFeedback() {
+  const list = document.querySelector("#saved-resume-feedback");
+  const key = "careerconnect:resume-feedback:" + user().id;
+  const entries = readSavedResumeFeedback(key);
+  list.replaceChildren();
+  if (!entries.length) return;
+  const heading = document.createElement("h2");
+  heading.textContent = "Saved feedback";
+  list.append(heading);
+  entries.forEach((entry, index) => {
+    const row = document.createElement("div");
+    row.className = "saved-feedback-entry";
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "btn btn-secondary";
+    button.textContent = entry.targetRole || entry.resumeName;
+    button.title = entry.resumeName;
+
+    const details = document.createElement("div");
+    details.id = "saved-feedback-" + index;
+    details.className = "resume-feedback-result";
+    details.hidden = true;
+    button.setAttribute("aria-controls", details.id);
+    button.setAttribute("aria-expanded", "false");
+    button.addEventListener("click", () => {
+      const opening = details.hidden;
+      for (const openButton of list.querySelectorAll('[aria-expanded="true"]')) {
+        openButton.setAttribute("aria-expanded", "false");
+        openButton.nextElementSibling.hidden = true;
+      }
+      if (opening) {
+        document.querySelector("#resume-feedback-result").replaceChildren();
+        showResumeFeedback(details, entry);
+        details.hidden = false;
+        button.setAttribute("aria-expanded", "true");
+      }
+    });
+    row.append(button, details);
+    list.append(row);
+  });
+}
+
+function showResumeFeedback(output, result, accountId) {
+  output.innerHTML = `<h2>Feedback for ${e(result.resumeName)}</h2>
+    ${result.targetRole ? `<p class="hint">Target role: ${e(result.targetRole)}</p>` : ""}
+    ${formatResumeFeedback(result.feedback)}`;
+  if (!accountId) return;
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "btn btn-secondary";
+  button.textContent = "Save feedback";
+  button.addEventListener("click", () => {
+    if (user()?.id !== accountId) return;
+    try {
+      const key = "careerconnect:resume-feedback:" + accountId;
+      const entries = readSavedResumeFeedback(key);
+      localStorage.setItem(key, JSON.stringify([result, ...entries]));
+      output.replaceChildren();
+      renderSavedResumeFeedback();
+      toast("Feedback saved.");
+    } catch {
+      toast("Could not save feedback in this browser.");
+    }
+  });
+  output.append(button);
+}
+
+function formatResumeFeedback(feedback) {
+  const emphasize = text => e(text).replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  const blocks = [];
+  let bullets = [];
+  function finishList() {
+    if (!bullets.length) return;
+    blocks.push(`<ul>${bullets.join("")}</ul>`);
+    bullets = [];
+  }
+  for (const line of feedback.split(/\r?\n/)) {
+    const text = line.trim();
+    const item = text.match(/^[-*]\s+(.+)$/);
+    if (item) {
+      bullets.push(`<li>${emphasize(item[1])}</li>`);
+      continue;
+    }
+    finishList();
+    const heading = text.match(/^#{1,6}\s+(.+)$/);
+    if (heading) blocks.push(`<h3>${emphasize(heading[1])}</h3>`);
+    else if (text) blocks.push(`<p>${emphasize(text)}</p>`);
+  }
+  finishList();
+  return blocks.join("");
+}
+
 function renderSaved() {
   const jobs = db.jobs.filter((job) => user().saved.includes(job.id));
   shell(
@@ -936,28 +1064,21 @@ async function handleSubmit(form) {
     toast("Resume replaced.");
   } else if (form.id === "resume-feedback-form") {
     if (user()?.role !== "seeker") throw new Error("Resume feedback is available to job seekers.");
-    const apiBasePath = window.CareerConnectConfig?.apiBasePath || "/api";
-    let response;
+    const accountId = user().id;
+    const output = form.nextElementSibling;
+    const openFeedback = document.querySelector('#saved-resume-feedback [aria-expanded="true"]');
+    if (openFeedback) openFeedback.click();
+    output.textContent = "Reviewing your resume…";
     try {
-      response = await fetch(`${apiBasePath}/resume-feedback`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ resumeText: values.resumeText, targetRole: values.targetRole }),
+      const result = await requestData("/resume-feedback", {
+        resumeId: values.resumeId,
+        targetRole: values.targetRole.trim(),
       });
+      if (user()?.id === accountId) showResumeFeedback(output, result, accountId);
     } catch {
-      throw new Error("Resume feedback is temporarily unavailable. Please try again later.");
+      output.textContent = "";
+      throw new Error("Could not get resume feedback. Please try again.");
     }
-    let result;
-    try {
-      result = await response.json();
-    } catch {
-      throw new Error("Resume feedback returned an unexpected response. Please try again later.");
-    }
-    if (!response.ok) throw new Error(result.message || "Resume feedback is temporarily unavailable. Please try again later.");
-    const output = form.parentElement.querySelector("#resume-feedback-result");
-    output.textContent = result.feedback;
-    output.hidden = false;
-    toast("Your resume feedback is ready.");
   } else if (form.id === "job-form") {
     if (user()?.role !== "recruiter") return;
     for (const key of [

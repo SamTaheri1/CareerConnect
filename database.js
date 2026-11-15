@@ -153,6 +153,16 @@ class Database {
       value.id, job.id, person.id, resume.id, text(value.name, "name", 80, true), validateEmail(value.email),
       text(value.note || "", "note", 2000), JSON.stringify(profile), resume.name, "Applied", now, JSON.stringify([{ status: "Applied", date: now }])));
   }
+  async resumeForFeedback(person, key) {
+    if (!person) fail("Please log in.", 401);
+    if (person.role !== "seeker") fail("Resume feedback is available to job seekers.", 403);
+    const resume = await this.sql.prepare(
+      "SELECT name, content FROM resumes WHERE id = ? AND user_id = ? AND listed = 1"
+    ).get(id(key), person.id);
+    if (!resume) fail("Choose an uploaded resume from your profile.", 404);
+    return resume;
+  }
+
   async file(person, action, key, value) {
     return this.transaction(async () => {
       await this.sql.query("SELECT pg_advisory_xact_lock(734192)");

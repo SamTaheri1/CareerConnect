@@ -1400,3 +1400,34 @@ dialog h2 {
     height: 30px;
   }
 }
+
+.resume-feedback-result:not(:empty) {
+  margin-top: 2rem;
+  padding: 1.25rem;
+  border: 1px solid #dce6df;
+  border-radius: 12px;
+  background: #f6f9f7;
+  overflow-wrap: anywhere;
+}
+.resume-feedback-result h3 {
+  margin: 1.25rem 0 0.5rem;
+  font-weight: 700;
+}
+.resume-feedback-result ul {
+  padding-inline-start: 1.4rem;
+}
+.resume-feedback-result li + li {
+  margin-top: 0.4rem;
+}
+
+#saved-resume-feedback:not(:empty) {
+  margin-top: 2rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid #dce6df;
+}
+.saved-feedback-entry + .saved-feedback-entry {
+  margin-top: 0.75rem;
+}
+.saved-feedback-entry .resume-feedback-result:not(:empty) {
+  margin-top: 0.75rem;
+}
