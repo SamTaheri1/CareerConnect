@@ -92,4 +92,4 @@ function createResumeFeedbackHandler({ config, limiter, store, fetch: request = 
   };
 }
 
-module.exports = { createResumeFeedbackHandler };
+module.exports = { createResumeFeedbackHandler, responseText };

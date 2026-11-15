@@ -195,7 +195,7 @@ function header(route) {
     "</a>";
 }
 function shell(content) {
-  main.innerHTML = `<div class="page">${content}</div>`;
+  main.innerHTML = `<div class="page page-enter">${content}</div>`;
 }
 function navigate(route) {
   if (location.hash === `#${route}`) render();
@@ -613,6 +613,19 @@ async function loadApplications() {
     ));
   }
 }
+function savedApplicationAdviceKey() {
+  return "careerconnect:application-advice:" + user().id;
+}
+
+function renderSavedApplicationAdvice() {
+  const panel = document.querySelector("#saved-application-advice");
+  if (!panel) return;
+  const entries = readSavedResumeFeedback(savedApplicationAdviceKey());
+  panel.innerHTML = `<h2>Saved Advices</h2>${entries.length ? entries.map(entry => `
+    <h3 class="saved-advice"><button type="button" class="btn btn-secondary" data-action="open-saved-advice" data-id="${e(entry.applicationId)}">${e(entry.title)}</button></h3>
+  `).join("") : '<p class="hint">No saved advice yet.</p>'}`;
+}
+
 function renderApplications() {
   const summary = applicationSummary(db.applications, user().id);
   const all = summary.applications;
@@ -625,7 +638,7 @@ function renderApplications() {
     `<div class="page-title"><div><div class="eyebrow">Every step forward</div><h1>My applications</h1><p>Your search, with a little more perspective.</p></div><a class="btn btn-secondary" href="#jobs">Find more jobs ${icon("arrow")}</a></div><div class="stats application-stats" aria-label="Application summary" aria-live="polite"><div class="stat"><strong>${summary.total}</strong><span>Total applications</span></div>${statuses.map((status) => `<div class="stat"><strong>${summary.counts[status]}</strong><span>${status}</span></div>`).join("")}</div><div class="profile-layout"><section><div class="toolbar"><h2>Application history</h2><select id="application-filter" aria-label="Filter applications by status">${["All", ...statuses].map((status) => `<option ${applicationFilter === status ? "selected" : ""}>${status}</option>`).join("")}</select></div>${shown
       .map((app) => {
         const job = db.jobs.find((j) => j.id === app.jobId);
-        return `<article class="application">${logo(job)}<div class="grow"><h3><a href="#job/${job.id}">${e(job.title)}</a></h3><p>${e(job.company)} · Applied ${date(app.createdAt)}</p><div class="history">${app.history.map((item) => `${e(item.status)} · ${date(item.date)}`).join(" → ")}</div><button type="button" class="btn btn-secondary" data-action="application-notes" data-id="${e(app.id)}" style="margin-top:12px">My private notes</button></div>${badge(app.status)}</article>`;
+        return `<article class="application">${logo(job)}<div class="grow"><h3><a href="#job/${job.id}">${e(job.title)}</a></h3><p>${e(job.company)} · Applied ${date(app.createdAt)}</p><div class="history">${app.history.map((item) => `${e(item.status)} · ${date(item.date)}`).join(" → ")}</div><button type="button" class="btn btn-secondary" data-action="application-notes" data-id="${e(app.id)}" style="margin-top:12px">My private notes</button><div class="form-actions"><button type="button" class="btn btn-primary" data-action="application-advice" data-id="${e(app.id)}">Get next-step advice ${icon("arrow")}</button></div><div class="resume-feedback-result" data-application-advice aria-live="polite"></div></div>${badge(app.status)}</article>`;
       })
       .join("") ||
     empty(
@@ -636,8 +649,9 @@ function renderApplications() {
         ? "Choose another status to see your applications."
         : "Find a role you like and send your first application.",
     )
-    } </section><aside class="panel"><h2>On your radar</h2>${deadlineList(db.jobs.filter((job) => user().saved.includes(job.id) && !all.some((app) => app.jobId === job.id)))}</aside></div>`,
+    } </section><aside class="panel"><h2>On your radar</h2>${deadlineList(db.jobs.filter((job) => user().saved.includes(job.id) && !all.some((app) => app.jobId === job.id)))}<section id="saved-application-advice"></section></aside></div>`,
   );
+  renderSavedApplicationAdvice();
 }
 async function openApplicationNotes(applicationId) {
   const app = db.applications.find(
@@ -804,7 +818,14 @@ function clearResumePreview() {
   resumePreviewUrl = null;
   modal.classList.remove("resume-preview-modal");
 }
+modal.addEventListener("click", (event) => {
+  if (event.target !== modal || !modal.classList.contains("saved-advice-modal")) return;
+  const bounds = modal.getBoundingClientRect();
+  if (event.clientX < bounds.left || event.clientX > bounds.right ||
+      event.clientY < bounds.top || event.clientY > bounds.bottom) modal.close();
+});
 modal.addEventListener("close", () => {
+  modal.classList.remove("saved-advice-modal");
   // A queued close event must not clear a newly opened dialog.
   if (!modal.open) clearResumePreview();
 });
@@ -1237,6 +1258,51 @@ document.addEventListener("click", async (event) => {
   const button = event.target.closest("[data-action]");
   if (!button) return;
   const { action, id } = button.dataset;
+  if (action === "open-saved-advice") {
+    if (user()?.role !== "seeker") return;
+    const entry = readSavedResumeFeedback(savedApplicationAdviceKey()).find(item => item.applicationId === id);
+    if (!entry) return;
+    openModal(`<p class="eyebrow">Saved advice</p><h2 id="modal-title">${e(entry.title)}</h2>
+      <div class="resume-feedback-result">${formatResumeFeedback(entry.advice)}</div>`);
+    modal.classList.add("saved-advice-modal");
+    return;
+  }
+  if (action === "application-advice") {
+    if (button.disabled) return;
+    const output = button.closest(".application").querySelector("[data-application-advice]");
+    const accountId = user().id;
+    const title = button.closest(".application").querySelector("h3").textContent;
+    button.disabled = true;
+    output.textContent = "Preparing next-step advice…";
+    try {
+      const { advice } = await requestData("/application-advice", { applicationId: id });
+      if (!output.isConnected || user()?.id !== accountId) return;
+      output.innerHTML = formatResumeFeedback(advice);
+      const save = document.createElement("button");
+      save.type = "button";
+      save.className = "btn btn-secondary";
+      save.textContent = "Save advice";
+      save.addEventListener("click", () => {
+        if (user()?.id !== accountId) return;
+        try {
+          const key = savedApplicationAdviceKey();
+          const entries = readSavedResumeFeedback(key).filter(entry => entry.applicationId !== id);
+          localStorage.setItem(key, JSON.stringify([{ applicationId: id, title, advice }, ...entries]));
+          renderSavedApplicationAdvice();
+          save.textContent = "Advice saved";
+          save.disabled = true;
+        } catch {
+          toast("Could not save advice in this browser.");
+        }
+      });
+      output.append(save);
+    } catch {
+      output.textContent = "Could not get next-step advice. Please try again later.";
+    } finally {
+      button.disabled = false;
+    }
+    return;
+  }
   try {
     if (action === "application-notes") {
       if (modal.open) modal.close();

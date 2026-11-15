@@ -1431,3 +1431,38 @@ dialog h2 {
 .saved-feedback-entry .resume-feedback-result:not(:empty) {
   margin-top: 0.75rem;
 }
+
+#saved-application-advice {
+  margin-top: 1.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid #dce6df;
+}
+.saved-advice {
+  margin-top: 0.75rem;
+}
+.saved-advice button {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: left;
+  font-weight: 700;
+}
+dialog.saved-advice-modal {
+  width: min(42rem, calc(100% - 2rem));
+  max-height: 85vh;
+  overflow-y: auto;
+  background: #f6f9f7;
+  border: 1px solid #b9d3c3;
+  color: #16483d;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .page-enter {
+    animation: careerconnect-enter 280ms ease-in both;
+  }
+  dialog.saved-advice-modal[open] {
+    animation: careerconnect-enter 200ms ease-in both;
+  }
+}
+@keyframes careerconnect-enter {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}

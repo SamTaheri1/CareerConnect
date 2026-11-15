@@ -7,6 +7,7 @@ const { Database } = require("./database");
 const { createLoginHandler } = require("./auth/login");
 const { createRegisterHandler } = require("./auth/register");
 const { createResumeFeedbackHandler } = require("./ai/resume-feedback");
+const { createApplicationAdviceHandler } = require("./ai/application-advice");
 const { AuthRateLimiter } = require("./rate-limiter");
 
 function json(response, status, body) {
@@ -40,6 +41,7 @@ async function createServer(options = {}) {
   const api = {
     [`${config.apiBasePath}/register`]: createRegisterHandler({ store, config }),
     [`${config.apiBasePath}/login`]: createLoginHandler({ store, config, limiter }),
+    [`${config.apiBasePath}/application-advice`]: createApplicationAdviceHandler({ config, limiter, store, fetch: options.fetch }),
     [`${config.apiBasePath}/resume-feedback`]: createResumeFeedbackHandler({ config, limiter, store, fetch: options.fetch }),
   };
   const files = { "/": ["index.html", "text/html"], "/index.html": ["index.html", "text/html"], "/styles.css": ["styles.css", "text/css"], "/data.js": ["data.js", "text/javascript"], "/app.js": ["app.js", "text/javascript"] };

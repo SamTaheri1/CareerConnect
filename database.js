@@ -153,6 +153,18 @@ class Database {
       value.id, job.id, person.id, resume.id, text(value.name, "name", 80, true), validateEmail(value.email),
       text(value.note || "", "note", 2000), JSON.stringify(profile), resume.name, "Applied", now, JSON.stringify([{ status: "Applied", date: now }])));
   }
+  async applicationForAdvice(person, applicationId) {
+    if (!person) fail("Please log in.", 401);
+    if (person.role !== "seeker") fail("Next-step advice is available to job seekers.", 403);
+    const application = await this.sql.prepare(
+      `SELECT jobs.title, jobs.description, applications.status
+       FROM applications JOIN jobs ON jobs.id = applications.job_id
+       WHERE applications.id = ? AND applications.user_id = ?`
+    ).get(id(applicationId), person.id);
+    if (!application) fail("This application is unavailable.", 404);
+    return application;
+  }
+
   async resumeForFeedback(person, key) {
     if (!person) fail("Please log in.", 401);
     if (person.role !== "seeker") fail("Resume feedback is available to job seekers.", 403);
