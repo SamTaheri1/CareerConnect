@@ -44,3 +44,34 @@ test("recruiter application list filters by posting, status and application date
 test("cleared recruiter filters show all owned applications again", () => {
   assert.equal(filter({ jobId: "", status: "All", date: "" }).length, 3);
 });
+
+test("only the owning recruiter can archive and restore a posting", async () => {
+  const job = { id: "job-1", ownerId: "owner", status: "Open", deadline: "2099-01-01" };
+  let recruiter = { id: "other", role: "recruiter" };
+  const savedStatuses = [];
+  const scope = vm.createContext({
+    db: { jobs: [job] },
+    user: () => recruiter,
+    persist: async () => { savedStatuses.push(job.status); },
+    render() {},
+    toast() {},
+  });
+  const start = source.indexOf('} else if (action === "toggle-job"');
+  assert.notEqual(start, -1);
+  const postingAction = source.slice(start + 2, source.indexOf("\n  } catch", start));
+  const visibility = source.slice(source.indexOf("function today()"), source.indexOf("function posted("));
+  vm.runInContext(visibility + 'async function click(action, id) { if (false) {} ' + postingAction + '}', scope);
+
+  await scope.click("archive-job", job.id);
+  assert.equal(job.status, "Open");
+  assert.deepEqual(savedStatuses, []);
+
+  recruiter = { id: "owner", role: "recruiter" };
+  await scope.click("archive-job", job.id);
+  assert.equal(job.status, "Archived");
+  assert.equal(scope.isOpen(job), false);
+
+  await scope.click("archive-job", job.id);
+  assert.equal(job.status, "Closed");
+  assert.deepEqual(savedStatuses, ["Archived", "Closed"]);
+});

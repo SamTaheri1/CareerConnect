@@ -9,6 +9,22 @@ function applicationSummary(applications, userId) {
   return { applications: ownApplications, total: ownApplications.length, counts };
 }
 
+function weeklyApplicationCounts(applications, now = new Date()) {
+  const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  monday.setDate(monday.getDate() - (monday.getDay() + 6) % 7);
+  return [-3, -2, -1, 0].map(offset => {
+    const start = new Date(monday);
+    start.setDate(start.getDate() + offset * 7);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 7);
+    const count = applications.filter(application => {
+      const submitted = new Date(application.createdAt);
+      return submitted >= start && submitted < end && submitted <= now;
+    }).length;
+    return { start, count };
+  });
+}
+
 function filterRecruiterApplications(applications, ownedJobIds, filters = {}) {
   const owned = new Set(ownedJobIds);
   return applications
@@ -691,6 +707,14 @@ function renderSavedApplicationAdvice() {
 
 function renderApplications() {
   const summary = applicationSummary(db.applications, user().id);
+  const weeklyCounts = weeklyApplicationCounts(summary.applications);
+  const weekLabel = new Intl.DateTimeFormat("en-CA", { month: "short", day: "numeric" });
+  const weeklyActivity = `<section class="panel" aria-labelledby="weekly-activity-title">
+    <h2 id="weekly-activity-title">Applications submitted per week</h2>
+    <div class="stats application-stats">${weeklyCounts.map(({ start, count }) =>
+      `<div class="stat"><strong>${count}</strong><span>Week of ${weekLabel.format(start)}</span></div>`
+    ).join("")}</div>
+  </section>`;
   const all = summary.applications;
   const shown = all
     .filter(
@@ -698,7 +722,7 @@ function renderApplications() {
     )
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   shell(
-    `<div class="page-title"><div><div class="eyebrow">Every step forward</div><h1>My applications</h1><p>Your search, with a little more perspective.</p></div><a class="btn btn-secondary" href="#jobs">Find more jobs ${icon("arrow")}</a></div><div class="stats application-stats" aria-label="Application summary" aria-live="polite"><div class="stat"><strong>${summary.total}</strong><span>Total applications</span></div>${statuses.map((status) => `<div class="stat"><strong>${summary.counts[status]}</strong><span>${status}</span></div>`).join("")}</div><div class="profile-layout"><section><div class="toolbar"><h2>Application history</h2><select id="application-filter" aria-label="Filter applications by status">${["All", ...statuses].map((status) => `<option ${applicationFilter === status ? "selected" : ""}>${status}</option>`).join("")}</select></div>${shown
+    `<div class="page-title"><div><div class="eyebrow">Every step forward</div><h1>My applications</h1><p>Your search, with a little more perspective.</p></div><a class="btn btn-secondary" href="#jobs">Find more jobs ${icon("arrow")}</a></div><div class="stats application-stats" aria-label="Application summary" aria-live="polite"><div class="stat"><strong>${summary.total}</strong><span>Total applications</span></div>${statuses.map((status) => `<div class="stat"><strong>${summary.counts[status]}</strong><span>${status}</span></div>`).join("")}</div>${weeklyActivity}<div class="profile-layout"><section><div class="toolbar"><h2>Application history</h2><select id="application-filter" aria-label="Filter applications by status">${["All", ...statuses].map((status) => `<option ${applicationFilter === status ? "selected" : ""}>${status}</option>`).join("")}</select></div>${shown
       .map((app) => {
         const job = db.jobs.find((j) => j.id === app.jobId);
         return `<article class="application">${logo(job)}<div class="grow"><h3><a href="#job/${job.id}">${e(job.title)}</a></h3><p>${e(job.company)} · Applied ${date(app.createdAt)}</p><div class="history">${app.history.map((item) => `${e(item.status)} · ${date(item.date)}`).join(" → ")}</div><button type="button" class="btn btn-secondary" data-action="application-notes" data-id="${e(app.id)}" style="margin-top:12px">My private notes</button><div class="form-actions"><button type="button" class="btn btn-primary" data-action="application-advice" data-id="${e(app.id)}">Get next-step advice ${icon("arrow")}</button></div><div class="resume-feedback-result" data-application-advice aria-live="polite"></div></div>${badge(app.status)}</article>`;

@@ -53,3 +53,15 @@ test("application dashboard recalculates after an application status changes", (
   assert.equal(after.counts.Interview, 1);
   assert.equal(after.total, 1);
 });
+
+test("weekly activity counts only the seeker's submissions at the Monday boundary", () => {
+  const applications = [
+    { userId: "seeker-1", createdAt: new Date(2026, 10, 8, 23, 59) },
+    { userId: "seeker-1", createdAt: new Date(2026, 10, 9) },
+    { userId: "seeker-2", createdAt: new Date(2026, 10, 9) },
+    { userId: "seeker-1", createdAt: new Date(2026, 10, 12) },
+  ];
+  const own = context.applicationSummary(applications, "seeker-1").applications;
+  const weeks = context.weeklyApplicationCounts(own, new Date(2026, 10, 11));
+  assert.deepEqual(Array.from(weeks, week => week.count), [0, 0, 1, 1]);
+});
