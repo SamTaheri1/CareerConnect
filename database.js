@@ -400,6 +400,30 @@ class Database {
       now
     );
   }
+ 
+  async applicationForAdvice(person, applicationId) {
+    if (!person) fail("Please log in.", 401);
+    if (person.role !== "seeker") fail("Next-step advice is available to job seekers.", 403);
+    const application = await this.sql.prepare(
+      `SELECT jobs.title, jobs.description, applications.status
+       FROM applications JOIN jobs ON jobs.id = applications.job_id
+       WHERE applications.id = ? AND applications.user_id = ?`
+    ).get(id(applicationId), person.id);
+    if (!application) fail("This application is unavailable.", 404);
+    return application;
+  }
+
+  async resumeForFeedback(person, key) {
+    if (!person) fail("Please log in.", 401);
+    if (person.role !== "seeker") fail("Resume feedback is available to job seekers.", 403);
+    const resume = await this.sql.prepare(
+      "SELECT name, content FROM resumes WHERE id = ? AND user_id = ? AND listed = 1"
+    ).get(id(key), person.id);
+    if (!resume) fail("Choose an uploaded resume from your profile.", 404);
+    return resume;
+  }
+
+
   async file(person, action, key, value) {
     return this.transaction(async () => {
       await this.sql.query("SELECT pg_advisory_xact_lock(734192)");
