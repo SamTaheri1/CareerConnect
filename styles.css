@@ -1491,3 +1491,19 @@ dialog.saved-advice-modal {
   border-radius: 50%;
   background: #b83636;
 }
+
+.notification-statuses { margin-bottom: 1.25rem; }
+.notification-statuses details { border-top: 1px solid #dce6df; }
+.notification-statuses summary { padding: 0.75rem 0; cursor: pointer; }
+.notification-statuses .application { flex-wrap: wrap; margin-bottom: 0.75rem; }
+
+.application-status-card {
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+}
+.application-status-card:hover,
+.application-status-card[aria-pressed="true"] {
+  border-color: #16483d;
+  background: #eef6f1;
+}
