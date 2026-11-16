@@ -201,6 +201,7 @@ async function renderNotifications() {
     }
 
     const items = data.notifications || [];
+    updateNotificationBell(items);
     const isRecruiter = user()?.role === "recruiter";
 
     shell(`
@@ -275,6 +276,30 @@ async function renderNotifications() {
   }
 }
 
+function updateNotificationBell(items) {
+  const bell = document.querySelector("#notification-bell");
+  if (!bell) return;
+  const unread = items.some(item => !item.readAt);
+  bell.querySelector(".notification-dot").hidden = !unread;
+  bell.setAttribute("aria-label", unread ? "Notifications, unread alerts" : "Notifications");
+}
+
+async function refreshNotificationBell() {
+  const accountId = user()?.id;
+  if (!accountId || location.hash === "#notifications") return;
+  try {
+    const { notifications } = await requestData("/notifications");
+    if (user()?.id === accountId) updateNotificationBell(notifications);
+  } catch {
+    // Keep the last known badge if the refresh fails.
+  }
+}
+
+window.addEventListener("focus", refreshNotificationBell);
+setInterval(() => {
+  if (!document.hidden) refreshNotificationBell();
+}, 15000);
+
 function header(route) {
   const person = user();
   const links =
@@ -283,14 +308,12 @@ function header(route) {
         ["jobs", "Find jobs"],
         ["postings", "My postings"],
         ["candidates", "Applications"],
-        ["notifications", "Notifications"],
       ]
       : [
         ["jobs", "Find jobs"],
         ["applications", "My applications"],
         ["saved", "Saved jobs"],
         ["resume-feedback", "Resume feedback"],
-        ["notifications", "Notifications"],
       ];
   document.querySelector("#navigation").innerHTML = links
     .map(
@@ -299,10 +322,14 @@ function header(route) {
     )
     .join("");
   document.querySelector("#account-actions").innerHTML = person
-    ? `<a href="#profile" class="avatar" aria-label="My profile">${e(person.name.slice(0, 1).toUpperCase())}</a><a class="account-name" href="#profile">${e(person.name.split(" ")[0])}</a><button class="btn btn-text" data-action="logout">Log out</button>`
+    ? `<a href="#notifications" id="notification-bell" class="notification-bell${route === "notifications" ? " active" : ""}" aria-label="Notifications" ${route === "notifications" ? 'aria-current="page"' : ""}>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/>
+      </svg><span class="notification-dot" hidden></span></a><a href="#profile" class="avatar" aria-label="My profile">${e(person.name.slice(0, 1).toUpperCase())}</a><a class="account-name" href="#profile">${e(person.name.split(" ")[0])}</a><button class="btn btn-text" data-action="logout">Log out</button>`
     : '<a href="#login" class="btn btn-text">Log in</a><a href="#register" class="btn btn-primary">Get started ' +
     icon("arrow") +
     "</a>";
+  void refreshNotificationBell();
 }
 function shell(content) {
   main.innerHTML = `<div class="page">${content}</div>`;
