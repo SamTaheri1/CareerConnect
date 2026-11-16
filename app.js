@@ -1,4 +1,52 @@
-const statuses = ["Applied", "Interview", "Offered", "Rejected"];
+const statuses = ["Applied", "Under Review", "Interview", "Offered", "Rejected"];
+
+function applicationSummary(applications, userId) {
+  const ownApplications = applications.filter((app) => app.userId === userId);
+  const counts = Object.fromEntries(statuses.map((status) => [status, 0]));
+  for (const application of ownApplications) {
+    if (Object.hasOwn(counts, application.status)) counts[application.status] += 1;
+  }
+  return { applications: ownApplications, total: ownApplications.length, counts };
+}
+
+function weeklyApplicationCounts(applications, now = new Date()) {
+  const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  monday.setDate(monday.getDate() - (monday.getDay() + 6) % 7);
+  return [-3, -2, -1, 0].map(offset => {
+    const start = new Date(monday);
+    start.setDate(start.getDate() + offset * 7);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 7);
+    const count = applications.filter(application => {
+      const submitted = new Date(application.createdAt);
+      return submitted >= start && submitted < end && submitted <= now;
+    }).length;
+    return { start, count };
+  });
+}
+
+function filterRecruiterApplications(applications, ownedJobIds, filters = {}) {
+  const owned = new Set(ownedJobIds);
+  return applications
+    .filter((application) => owned.has(application.jobId))
+    .filter((application) => !filters.jobId || application.jobId === filters.jobId)
+    .filter((application) => !filters.status || filters.status === "All" || application.status === filters.status)
+    .filter((application) => !filters.date || application.createdAt.slice(0, 10) === filters.date)
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+}
+
+function toggleSavedJob(savedJobIds, jobId) {
+  return savedJobIds.includes(jobId)
+    ? savedJobIds.filter((id) => id !== jobId)
+    : [...savedJobIds, jobId];
+}
+
+function recruiterOwnsApplication(application, jobs, recruiterId) {
+  return Boolean(
+    application &&
+    jobs.some((job) => job.id === application.jobId && job.ownerId === recruiterId),
+  );
+}
 const main = document.querySelector("#main");
 const modal = document.querySelector("#modal");
 const icons = {
@@ -103,7 +151,7 @@ function salary(job) {
   return `$${Number(job.min).toLocaleString("en-CA")} – $${Number(job.max).toLocaleString("en-CA")}`;
 }
 function badge(status) {
-  return `<span class="status ${e(status.toLowerCase())}">${e(status)}</span>`;
+  return `<span class="status ${e(status.toLowerCase().replace(/\s+/g, "-"))}">${e(status)}</span>`;
 }
 function logo(job) {
   return `<span class="company-logo ${["peach", "purple", "pink", "blue", "green", "yellow"].includes(job.color) ? job.color : "green"}" aria-hidden="true">${e(job.initials)}</span>`;
@@ -133,7 +181,222 @@ let filters = {
   sort: "newest",
 };
 let applicationFilter = "All";
+let candidateFilters = { status: "All", date: "" };
 let applicationNotes = {};
+
+function applicationStatusSections() {
+  const own = applicationSummary(db.applications, user().id).applications;
+  return `<section class="panel notification-statuses" aria-label="Applications by status">
+    <h2>Applications by status</h2>
+    ${statuses.map(status => {
+      const entries = own.filter(application => application.status === status)
+        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+      return `<details>
+        <summary><strong>${e(status)} (${entries.length})</strong></summary>
+        ${entries.length ? entries.map(application => {
+          const job = db.jobs.find(item => item.id === application.jobId);
+          return `<div class="application">
+            <div class="grow"><h3><button type="button" class="btn btn-text" data-action="view-submitted-application" data-id="${e(application.id)}">${e(job?.title || "Job posting")}</button></h3><p>${e(job?.company)} · Applied ${date(application.createdAt)}</p></div>
+            <button type="button" class="btn btn-secondary" data-action="view-submitted-application" data-id="${e(application.id)}">View application</button>
+          </div>`;
+        }).join("") : '<p class="hint">No applications with this status.</p>'}
+      </details>`;
+    }).join("")}
+  </section>`;
+}
+
+function showSubmittedApplication(id) {
+  const person = user();
+  const application = db.applications.find(item => item.id === id && item.userId === person?.id);
+  if (person?.role !== "seeker" || !application) return;
+  const job = db.jobs.find(item => item.id === application.jobId);
+  openModal(`<h2 id="modal-title">${e(job?.title || "Submitted application")}</h2>
+    <p>${e(job?.company)} · Applied ${date(application.createdAt)}</p>
+    ${badge(application.status)}
+    <dl class="facts">
+      <div><dt>Name</dt><dd>${e(application.name)}</dd></div>
+      <div><dt>Email</dt><dd>${e(application.email)}</dd></div>
+      <div><dt>Submitted resume</dt><dd>${e(application.resumeName)}</dd></div>
+    </dl>
+    <h3>Note to the hiring team</h3>
+    <p class="application-note">${e(application.note || "No note included.")}</p>
+    <h3>Status history</h3>
+    <ul>${application.history.map(item => `<li>${e(item.status)} · ${date(item.date)}</li>`).join("")}</ul>
+    <div class="form-actions"><button type="button" class="btn btn-secondary" data-action="download-submitted-application" data-id="${e(id)}">Download submitted resume</button></div>`);
+  modal.classList.add("submitted-application-modal");
+}
+
+async function renderNotifications() {
+  const accountId = user()?.id;
+
+  shell('<p role="status">Loading notifications...</p>');
+
+  try {
+    const apiBasePath =
+      window.CareerConnectConfig?.apiBasePath || "/api";
+
+    const response = await fetch(
+      apiBasePath + "/notifications",
+      {
+        credentials: "same-origin",
+        cache: "no-store"
+      }
+    );
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(
+        data.message || "Could not load notifications."
+      );
+    }
+
+    const state = user()?.role === "seeker" ? await requestData("/state") : null;
+
+    if (
+      location.hash !== "#notifications" ||
+      user()?.id !== accountId
+    ) {
+      return;
+    }
+
+    if (state?.sessionId === accountId) acceptState(state);
+    const items = data.notifications || [];
+    acknowledgeNotificationBell(accountId, items);
+    const isRecruiter = user()?.role === "recruiter";
+
+    shell(`
+      <div class="page-title">
+        <div>
+          <div class="eyebrow">Stay informed</div>
+          <h1>Notifications</h1>
+          <p>
+            ${isRecruiter
+        ? "New applications to your job postings."
+        : "View your applications by their current status."}
+          </p>
+        </div>
+      </div>
+
+      ${isRecruiter ? `<section class="panel" style="padding:24px">
+        ${items.length
+        ? items.map(n => `
+            <article class="application"
+                     style="margin-bottom:12px">
+
+              <div class="grow">
+                <h3>${e(n.title)}</h3>
+                <p>${e(n.message)}</p>
+
+                <p class="small muted">
+                  ${e(new Date(n.createdAt).toLocaleString())}
+                </p>
+
+                ${isRecruiter &&
+            n.kind === "new_application" &&
+            n.applicationId
+            ? `
+                      <button
+                        type="button"
+                        class="btn btn-secondary"
+                        data-action="view-notification-application"
+                        data-id="${e(n.applicationId)}"
+                        style="margin-top:12px">
+                        View application
+                      </button>
+                    `
+            : ""}
+              </div>
+
+              ${n.readAt
+            ? '<span class="small muted">Read</span>'
+            : `
+                  <button
+                    type="button"
+                    class="btn btn-secondary"
+                    data-action="read-notification"
+                    data-id="${e(n.id)}">
+                    Mark read
+                  </button>
+                `}
+            </article>
+          `).join("")
+        : "<p>No notifications yet.</p>"}
+      </section>` : applicationStatusSections()}
+    `);
+
+  } catch (error) {
+    if (location.hash === "#notifications") {
+      shell(`
+        <div class="panel" style="padding:24px">
+          <h2>Could not load notifications</h2>
+          <p>${e(error.message)}</p>
+        </div>
+      `);
+    }
+  }
+}
+
+const seenNotificationIds = new Map();
+
+function notificationHistoryKey(accountId) {
+  return "careerconnect:seen-notifications:" + accountId;
+}
+
+function seenNotifications(accountId) {
+  if (!seenNotificationIds.has(accountId)) {
+    let ids = [];
+    try {
+      const saved = JSON.parse(localStorage.getItem(notificationHistoryKey(accountId)) || "[]");
+      if (Array.isArray(saved)) ids = saved;
+    } catch {
+      // The bell can still remember alerts while the page is open.
+    }
+    seenNotificationIds.set(accountId, new Set(ids));
+  }
+  return seenNotificationIds.get(accountId);
+}
+
+function acknowledgeNotificationBell(accountId, items) {
+  const seen = seenNotifications(accountId);
+  for (const item of items) seen.add(item.id);
+  try {
+    localStorage.setItem(notificationHistoryKey(accountId), JSON.stringify([...seen]));
+  } catch {
+    // Keep the in-memory history if browser storage is unavailable.
+  }
+  updateNotificationBell([]);
+}
+
+document.addEventListener("click", event => {
+  if (event.target.closest("#notification-bell")) updateNotificationBell([]);
+});
+
+function updateNotificationBell(items) {
+  const bell = document.querySelector("#notification-bell");
+  if (!bell) return;
+  const seen = seenNotifications(user()?.id);
+  const unread = items.some(item => !item.readAt && !seen?.has(item.id));
+  bell.querySelector(".notification-dot").hidden = !unread;
+  bell.setAttribute("aria-label", unread ? "Notifications, unread alerts" : "Notifications");
+}
+
+async function refreshNotificationBell() {
+  const accountId = user()?.id;
+  if (!accountId || location.hash === "#notifications") return;
+  try {
+    const { notifications } = await requestData("/notifications");
+    if (user()?.id === accountId && location.hash !== "#notifications") updateNotificationBell(notifications);
+  } catch {
+    // Keep the last known badge if the refresh fails.
+  }
+}
+
+window.addEventListener("focus", refreshNotificationBell);
+setInterval(() => {
+  if (!document.hidden) refreshNotificationBell();
+}, 15000);
+
 function header(route) {
   const person = user();
   const links =
@@ -156,10 +419,14 @@ function header(route) {
     )
     .join("");
   document.querySelector("#account-actions").innerHTML = person
-    ? `<a href="#profile" class="avatar" aria-label="My profile">${e(person.name.slice(0, 1).toUpperCase())}</a><a class="account-name" href="#profile">${e(person.name.split(" ")[0])}</a><button class="btn btn-text" data-action="logout">Log out</button>`
+    ? `<a href="#notifications" id="notification-bell" class="notification-bell${route === "notifications" ? " active" : ""}" aria-label="Notifications" ${route === "notifications" ? 'aria-current="page"' : ""}>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/>
+      </svg><span class="notification-dot" hidden></span></a><a href="#profile" class="avatar" aria-label="My profile">${e(person.name.slice(0, 1).toUpperCase())}</a><a class="account-name" href="#profile">${e(person.name.split(" ")[0])}</a><button class="btn btn-text" data-action="logout">Log out</button>`
     : '<a href="#login" class="btn btn-text">Log in</a><a href="#register" class="btn btn-primary">Get started ' +
     icon("arrow") +
     "</a>";
+  void refreshNotificationBell();
 }
 function shell(content) {
   main.innerHTML = `<div class="page">${content}</div>`;
@@ -185,6 +452,7 @@ function render() {
     "new-job": "Post a job",
     "edit-job": "Edit job",
     "resume-feedback": "Resume feedback",
+    notifications: "Notifications",
   };
   document.title = `${names[route] || "Page not found"} · CareerConnect`;
   if (
@@ -193,6 +461,7 @@ function render() {
       "applications",
       "saved",
       "resume-feedback",
+      "notifications",
       "postings",
       "candidates",
       "new-job",
@@ -251,6 +520,9 @@ function render() {
     case "applications":
       loadApplications();
       break;
+    case "notifications":
+      renderNotifications();
+      break;
     case "postings":
       renderPostings();
       break;
@@ -302,14 +574,17 @@ function normalizeText(text) {
 
 
 
+function normalizeJobKeyword(text) {
+  return normalizeText(text).replace(/\bq\s*&\s*a\b/g, "qa");
+}
 function filteredJobs() {
-  const query = normalizeText(filters.query);
+  const query = normalizeJobKeyword(filters.query);
   const place = normalizeText(filters.location);
 
   return db.jobs
     .filter((job) =>
       isOpen(job) &&
-      normalizeText(
+      normalizeJobKeyword(
         `${job.title} ${job.company} ${job.description} ${job.tags.join(" ")}`
       ).includes(query) &&
       normalizeText(job.location).includes(place) &&
@@ -452,18 +727,76 @@ async function loadApplications() {
     ));
   }
 }
+function readSavedAdvice(key) {
+  try {
+    const entries = JSON.parse(localStorage.getItem(key) || "[]");
+    return Array.isArray(entries) ? entries : [];
+  } catch {
+    return [];
+  }
+}
+
+function formatApplicationAdvice(feedback) {
+  const emphasize = text => e(text).replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  const blocks = [];
+  let bullets = [];
+  function finishList() {
+    if (!bullets.length) return;
+    blocks.push(`<ul>${bullets.join("")}</ul>`);
+    bullets = [];
+  }
+  for (const line of feedback.split(/\r?\n/)) {
+    const text = line.trim();
+    const item = text.match(/^[-*]\s+(.+)$/);
+    if (item) {
+      bullets.push(`<li>${emphasize(item[1])}</li>`);
+      continue;
+    }
+    finishList();
+    const heading = text.match(/^#{1,6}\s+(.+)$/);
+    if (heading) blocks.push(`<h3>${emphasize(heading[1])}</h3>`);
+    else if (text) blocks.push(`<p>${emphasize(text)}</p>`);
+  }
+  finishList();
+  return blocks.join("");
+}
+
+function savedApplicationAdviceKey() {
+  return "careerconnect:application-advice:" + user().id;
+}
+
+function renderSavedApplicationAdvice() {
+  const panel = document.querySelector("#saved-application-advice");
+  if (!panel) return;
+  const entries = readSavedAdvice(savedApplicationAdviceKey());
+  panel.innerHTML = `<h2>Saved Advices</h2>${entries.length ? entries.map(entry => `
+    <h3 class="saved-advice"><button type="button" class="btn btn-secondary" data-action="open-saved-advice" data-id="${e(entry.applicationId)}">${e(entry.title)}</button></h3>
+  `).join("") : '<p class="hint">No saved advice yet.</p>'}`;
+}
+
 function renderApplications() {
-  const all = db.applications.filter((app) => app.userId === user().id);
+  const filterCard = (status, label, count) =>
+    `<button type="button" class="stat application-status-card" data-action="filter-application-status" data-id="${e(status)}" aria-pressed="${applicationFilter === status}"><strong>${count}</strong><span>${e(label)}</span></button>`;
+  const summary = applicationSummary(db.applications, user().id);
+  const weeklyCounts = weeklyApplicationCounts(summary.applications);
+  const weekLabel = new Intl.DateTimeFormat("en-CA", { month: "short", day: "numeric" });
+  const weeklyActivity = `<section class="panel" aria-labelledby="weekly-activity-title">
+    <h2 id="weekly-activity-title">Applications submitted per week</h2>
+    <div class="stats application-stats">${weeklyCounts.map(({ start, count }) =>
+      `<div class="stat"><strong>${count}</strong><span>Week of ${weekLabel.format(start)}</span></div>`
+    ).join("")}</div>
+  </section>`;
+  const all = summary.applications;
   const shown = all
     .filter(
       (app) => applicationFilter === "All" || app.status === applicationFilter,
     )
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   shell(
-    `<div class="page-title"><div><div class="eyebrow">Every step forward</div><h1>My applications</h1><p>Your search, with a little more perspective.</p></div><a class="btn btn-secondary" href="#jobs">Find more jobs ${icon("arrow")}</a></div><div class="stats">${statuses.map((status) => `<div class="stat"><strong>${all.filter((app) => app.status === status).length}</strong><span>${status}</span></div>`).join("")}</div><div class="profile-layout"><section><div class="toolbar"><h2>Application history</h2><select id="application-filter" aria-label="Filter applications by status">${["All", ...statuses].map((status) => `<option ${applicationFilter === status ? "selected" : ""}>${status}</option>`).join("")}</select></div>${shown
+    `<div class="page-title"><div><div class="eyebrow">Every step forward</div><h1>My applications</h1><p>Your search, with a little more perspective.</p></div><a class="btn btn-secondary" href="#jobs">Find more jobs ${icon("arrow")}</a></div><div class="stats application-stats" aria-label="Application summary" aria-live="polite">${filterCard("All", "Total applications", summary.total)}${statuses.map(status => filterCard(status, status, summary.counts[status])).join("")}</div>${weeklyActivity}<div class="profile-layout"><section><div class="toolbar"><h2>Application history</h2><select id="application-filter" aria-label="Filter applications by status">${["All", ...statuses].map((status) => `<option ${applicationFilter === status ? "selected" : ""}>${status}</option>`).join("")}</select></div>${shown
       .map((app) => {
         const job = db.jobs.find((j) => j.id === app.jobId);
-        return `<article class="application">${logo(job)}<div class="grow"><h3><a href="#job/${job.id}">${e(job.title)}</a></h3><p>${e(job.company)} · Applied ${date(app.createdAt)}</p><div class="history">${app.history.map((item) => `${e(item.status)} · ${date(item.date)}`).join(" → ")}</div><button type="button" class="btn btn-secondary" data-action="application-notes" data-id="${e(app.id)}" style="margin-top:12px">My private notes</button></div>${badge(app.status)}</article>`;
+        return `<article class="application">${logo(job)}<div class="grow"><h3><a href="#job/${job.id}">${e(job.title)}</a></h3><p>${e(job.company)} · Applied ${date(app.createdAt)}</p><div class="history">${app.history.map((item) => `${e(item.status)} · ${date(item.date)}`).join(" → ")}</div><button type="button" class="btn btn-secondary" data-action="application-notes" data-id="${e(app.id)}" style="margin-top:12px">My private notes</button> <button type="button" class="btn btn-secondary" style="margin-top:12px" data-action="view-submitted-application" data-id="${e(app.id)}">View application</button><div class="form-actions"><button type="button" class="btn btn-primary" data-action="application-advice" data-id="${e(app.id)}">Get next-step advice ${icon("arrow")}</button></div><div class="resume-feedback-result" data-application-advice aria-live="polite"></div></div>${badge(app.status)}</article>`;
       })
       .join("") ||
     empty(
@@ -474,8 +807,9 @@ function renderApplications() {
         ? "Choose another status to see your applications."
         : "Find a role you like and send your first application.",
     )
-    } </section><aside class="panel"><h2>On your radar</h2>${deadlineList(db.jobs.filter((job) => user().saved.includes(job.id) && !all.some((app) => app.jobId === job.id)))}</aside></div>`,
+    } </section><aside class="panel"><h2>On your radar</h2>${deadlineList(db.jobs.filter((job) => user().saved.includes(job.id) && !all.some((app) => app.jobId === job.id)))}<section id="saved-application-advice"></section></aside></div>`,
   );
+  renderSavedApplicationAdvice();
 }
 async function openApplicationNotes(applicationId) {
   const app = db.applications.find(
@@ -584,7 +918,7 @@ function renderPostings() {
     .filter((job) => job.ownerId === user().id)
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   shell(
-    `<div class="page-title"><div><div class="eyebrow">Build your team</div><h1>My job postings</h1><p>Give good people a place to do good work.</p></div><a href="#new-job" class="btn btn-primary">+ Post a job</a></div>${jobs.map((job) => `<article class="job-card recruiter-job"><div class="job-top">${logo(job)}<div class="grow"><h3><a href="#job/${job.id}">${e(job.title)}</a></h3><p>${e(job.company)} · ${e(job.location)} · ${e(job.type)}</p></div></div><div class="card-bottom"><div class="inline-actions">${badge(isOpen(job) ? "Open" : "Closed")}<span class="small muted">${db.applications.filter((app) => app.jobId === job.id).length} applicants · Closes ${date(job.deadline)}</span></div><div class="inline-actions"><a class="btn btn-text" href="#candidates/${job.id}">View applicants</a><a class="btn btn-secondary" href="#edit-job/${job.id}">Edit</a><button class="btn btn-secondary" data-action="toggle-job" data-id="${job.id}">${job.status === "Open" ? "Close" : "Reopen"}</button></div></div></article>`).join("") || empty("Your first hire starts here", "Post a role with the details candidates need to apply.", '<a href="#new-job" class="btn btn-primary">Create a job posting</a>')}`,
+    `<div class="page-title"><div><div class="eyebrow">Build your team</div><h1>My job postings</h1><p>Give good people a place to do good work.</p></div><a href="#new-job" class="btn btn-primary">+ Post a job</a></div>${jobs.map((job) => `<article class="job-card recruiter-job"><div class="job-top">${logo(job)}<div class="grow"><h3><a href="#job/${job.id}">${e(job.title)}</a></h3><p>${e(job.company)} · ${e(job.location)} · ${e(job.type)}</p></div></div><div class="card-bottom"><div class="inline-actions">${badge(job.status === "Archived" ? "Archived" : isOpen(job) ? "Open" : "Closed")}<span class="small muted">${db.applications.filter((app) => app.jobId === job.id).length} applicants · Closes ${date(job.deadline)}</span></div><div class="inline-actions"><a class="btn btn-text" href="#candidates/${job.id}">View applicants</a><a class="btn btn-secondary" href="#edit-job/${job.id}">Edit</a>${job.status === "Archived" ? "" : `<button class="btn btn-secondary" data-action="toggle-job" data-id="${job.id}">${job.status === "Open" ? "Close" : "Reopen"}</button>`}<button class="btn btn-secondary" data-action="archive-job" data-id="${job.id}">${job.status === "Archived" ? "Restore" : "Archive"}</button></div></div></article>`).join("") || empty("Your first hire starts here", "Post a role with the details candidates need to apply.", '<a href="#new-job" class="btn btn-primary">Create a job posting</a>')}`,
   );
 }
 function selectField(label, name, options, value) {
@@ -612,23 +946,25 @@ function renderJobForm(id) {
 function renderCandidates() {
   const selectedId = location.hash.split("/")[1] || "";
   const jobs = db.jobs.filter((job) => job.ownerId === user().id);
-  const apps = db.applications
-    .filter(
-      (app) =>
-        jobs.some((job) => job.id === app.jobId) &&
-        (!selectedId || app.jobId === selectedId),
-    )
-    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  const apps = filterRecruiterApplications(
+    db.applications,
+    jobs.map((job) => job.id),
+    { ...candidateFilters, jobId: selectedId },
+  );
   shell(
-    `<div class="page-title"><div><div class="eyebrow">Meet your next teammate</div><h1>Applications</h1><p>Review candidates and keep them in the loop.</p></div></div><div class="toolbar"><span class="muted">${apps.length} ${apps.length === 1 ? "application" : "applications"}</span><select id="candidate-job" aria-label="Filter by job posting"><option value="">All postings</option>${jobs.map((job) => `<option value="${job.id}" ${selectedId === job.id ? "selected" : ""}>${e(job.title)}</option>`).join("")}</select></div>${apps
+    `<div class="page-title"><div><div class="eyebrow">Meet your next teammate</div><h1>Applications</h1><p>Review candidates and keep them in the loop.</p></div></div><div class="candidate-toolbar"><span class="muted" aria-live="polite">${apps.length} ${apps.length === 1 ? "application" : "applications"}</span><div class="candidate-filters"><label>Job posting<select id="candidate-job"><option value="">All postings</option>${jobs.map((job) => `<option value="${job.id}" ${selectedId === job.id ? "selected" : ""}>${e(job.title)}</option>`).join("")}</select></label><label>Status<select id="candidate-status">${["All", ...statuses].map((status) => `<option value="${status}" ${candidateFilters.status === status ? "selected" : ""}>${status === "All" ? "All statuses" : status}</option>`).join("")}</select></label><label>Application date<input id="candidate-date" type="date" value="${e(candidateFilters.date)}"></label><button type="button" class="btn btn-secondary" data-action="clear-candidate-filters">Clear filters</button></div></div>${apps
       .map((app) => {
         const job = jobs.find((job) => job.id === app.jobId);
         return `<article class="application"><span class="avatar">${e(app.name.slice(0, 1))}</span><div class="grow"><h3>${e(app.name)}</h3><p>${e(job.title)} · ${date(app.createdAt)}</p></div>${badge(app.status)}<button class="btn btn-secondary" data-action="review" data-id="${app.id}">Review application</button></article>`;
       })
       .join("") ||
     empty(
-      "No applications yet",
-      "Applications to your postings will appear here.",
+      candidateFilters.status !== "All" || candidateFilters.date || selectedId
+        ? "No applications match these filters"
+        : "No applications yet",
+      candidateFilters.status !== "All" || candidateFilters.date || selectedId
+        ? "Clear or change a filter to see more applications."
+        : "Applications to your postings will appear here.",
     )
     }`,
   );
@@ -640,7 +976,17 @@ function clearResumePreview() {
   resumePreviewUrl = null;
   modal.classList.remove("resume-preview-modal");
 }
+modal.addEventListener("click", (event) => {
+  if (event.target !== modal) return;
+  const dismissOnBackdrop = modal.classList.contains("saved-advice-modal") ||
+    modal.classList.contains("submitted-application-modal");
+  if (!dismissOnBackdrop) return;
+  const bounds = modal.getBoundingClientRect();
+  if (event.clientX < bounds.left || event.clientX > bounds.right ||
+      event.clientY < bounds.top || event.clientY > bounds.bottom) modal.close();
+});
 modal.addEventListener("close", () => {
+  modal.classList.remove("saved-advice-modal", "submitted-application-modal");
   // A queued close event must not clear a newly opened dialog.
   if (!modal.open) clearResumePreview();
 });
@@ -685,10 +1031,8 @@ function replaceResumeModal(id) {
 }
 function reviewModal(id) {
   const app = db.applications.find((app) => app.id === id);
-  const job = db.jobs.find(
-    (job) => job.id === app?.jobId && job.ownerId === user()?.id,
-  );
-  if (!app || !job) return;
+  if (!recruiterOwnsApplication(app, db.jobs, user()?.id)) return;
+  const job = db.jobs.find((job) => job.id === app.jobId);
   openModal(
     `<div class="eyebrow">${e(job.title)}</div><h2 id="modal-title">${e(app.name)}</h2><p>${e(app.email)}</p>${app.profile?.headline ? `<h3>${e(app.profile.headline)}</h3>` : ""}${app.profile?.bio ? `<p class="application-note">${e(app.profile.bio)}</p>` : ""}${app.profile?.skills ? `<p class="small">Skills: ${e(app.profile.skills)}</p>` : ""}${app.profile?.location ? `<p class="small">${e(app.profile.location)}</p>` : ""}<button class="btn btn-secondary" data-action="download-application" data-id="${app.id}">${icon("file")} Download resume</button><h3 style="margin-top:24px">Candidate’s note</h3><p class="application-note">${e(app.note || "No note included.")}</p><form id="status-form" data-id="${id}">${selectField("Application status", "status", statuses, app.status)}<div class="history">${app.history.map((item) => `${e(item.status)} · ${date(item.date)}`).join("<br>")}</div><p id="form-error" class="error" role="alert"></p><div class="form-actions"><button class="btn btn-primary">Update status</button><button type="button" class="btn btn-secondary" data-action="close-modal">Close</button></div></form>`,
   );
@@ -1032,10 +1376,7 @@ async function handleSubmit(form) {
   } else if (form.id === "status-form") {
     const app = db.applications.find((app) => app.id === form.dataset.id);
     if (
-      !app ||
-      !db.jobs.some(
-        (job) => job.id === app.jobId && job.ownerId === user()?.id,
-      ) ||
+      !recruiterOwnsApplication(app, db.jobs, user()?.id) ||
       !statuses.includes(values.status)
     )
       throw new Error("You cannot update this application.");
@@ -1085,6 +1426,57 @@ document.addEventListener("click", async (event) => {
   const button = event.target.closest("[data-action]");
   if (!button) return;
   const { action, id } = button.dataset;
+  if (action === "filter-application-status") {
+    applicationFilter = id;
+    renderApplications();
+    document.querySelector('.application-status-card[aria-pressed="true"]')?.focus();
+    return;
+  }
+  if (action === "open-saved-advice") {
+    if (user()?.role !== "seeker") return;
+    const entry = readSavedAdvice(savedApplicationAdviceKey()).find(item => item.applicationId === id);
+    if (!entry) return;
+    openModal(`<p class="eyebrow">Saved advice</p><h2 id="modal-title">${e(entry.title)}</h2>
+      <div class="resume-feedback-result">${formatApplicationAdvice(entry.advice)}</div>`);
+    modal.classList.add("saved-advice-modal");
+    return;
+  }
+  if (action === "application-advice") {
+    if (button.disabled) return;
+    const output = button.closest(".application").querySelector("[data-application-advice]");
+    const accountId = user().id;
+    const title = button.closest(".application").querySelector("h3").textContent;
+    button.disabled = true;
+    output.textContent = "Preparing next-step advice…";
+    try {
+      const { advice } = await requestData("/application-advice", { applicationId: id });
+      if (!output.isConnected || user()?.id !== accountId) return;
+      output.innerHTML = formatApplicationAdvice(advice);
+      const save = document.createElement("button");
+      save.type = "button";
+      save.className = "btn btn-secondary";
+      save.textContent = "Save advice";
+      save.addEventListener("click", () => {
+        if (user()?.id !== accountId) return;
+        try {
+          const key = savedApplicationAdviceKey();
+          const entries = readSavedAdvice(key).filter(entry => entry.applicationId !== id);
+          localStorage.setItem(key, JSON.stringify([{ applicationId: id, title, advice }, ...entries]));
+          renderSavedApplicationAdvice();
+          save.textContent = "Advice saved";
+          save.disabled = true;
+        } catch {
+          toast("Could not save advice in this browser.");
+        }
+      });
+      output.append(save);
+    } catch {
+      output.textContent = "Could not get next-step advice. Please try again later.";
+    } finally {
+      button.disabled = false;
+    }
+    return;
+  }
   try {
     if (action === "application-notes") {
       if (modal.open) modal.close();
@@ -1117,6 +1509,52 @@ document.addEventListener("click", async (event) => {
       await refreshData();
       navigate("login");
       toast("You’re logged out.");
+
+    } else if (action === "view-submitted-application") {
+      showSubmittedApplication(id);
+    } else if (action === "download-submitted-application") {
+      const person = user();
+      const application = db.applications.find(item => item.id === id && item.userId === person?.id);
+      if (person?.role === "seeker" && application) {
+        await downloadFile(application.resumeId, application.resumeName);
+      }
+    } else if (action === "view-notification-application") {
+      if (user()?.role !== "recruiter") {
+        throw new Error("Recruiter access required.");
+      }
+
+      // Refresh the data to get the latest application.
+      await refreshData();
+
+      const application = db.applications.find(
+        item => item.id === id
+      );
+
+      // Ensure the recruiter owns the related job posting.
+      if (!recruiterOwnsApplication(
+        application,
+        db.jobs,
+        user()?.id
+      )) {
+        throw new Error(
+          "This application is no longer available to your account."
+        );
+      }
+
+      // Clear filters and open the related application.
+      candidateFilters = { status: "All", date: "" };
+
+      navigate("candidates/" + application.jobId);
+
+      reviewModal(id);
+
+    } else if (action === "read-notification") {
+      const response = await fetch('/api/notifications', {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id })
+      });
+      if (!response.ok) throw new Error((await response.json()).message || 'Could not mark notification read.');
+      await renderNotifications();
     } else if (action === "reload-applications") {
       if (user()?.role === "seeker") await loadApplications();
     } else if (action === "edit-profile") {
@@ -1140,6 +1578,9 @@ document.addEventListener("click", async (event) => {
         sort: "newest",
       };
       renderJobs();
+    } else if (action === "clear-candidate-filters") {
+      candidateFilters = { status: "All", date: "" };
+      navigate("candidates");
     } else if (action === "popular") {
       filters.query = button.dataset.term;
       document.querySelector('[name="query"]').value = filters.query;
@@ -1152,9 +1593,7 @@ document.addEventListener("click", async (event) => {
       }
       if (user().role !== "seeker") return;
       const saved = user().saved.includes(id);
-      user().saved = saved
-        ? user().saved.filter((item) => item !== id)
-        : [...user().saved, id];
+      user().saved = toggleSavedJob(user().saved, id);
       await persist();
       const route = location.hash.slice(1).split("/")[0];
       if (route === "jobs" || !route) updateResults();
@@ -1169,12 +1608,7 @@ document.addEventListener("click", async (event) => {
       if (resume) await downloadFile(id, resume.name);
     } else if (action === "download-application") {
       const app = db.applications.find((app) => app.id === id);
-      if (
-        app &&
-        db.jobs.some(
-          (job) => job.id === app.jobId && job.ownerId === user()?.id,
-        )
-      )
+      if (recruiterOwnsApplication(app, db.jobs, user()?.id))
         await downloadFile(app.resumeId, app.resumeName);
     } else if (action === "delete-resume") {
       const resume = user()?.resumes.find((resume) => resume.id === id);
@@ -1182,11 +1616,21 @@ document.addEventListener("click", async (event) => {
         openModal(
           `<h2 id="modal-title">Remove this resume?</h2><p>${e(resume.name)} will be removed from your profile. Applications you already sent will keep their own copy.</p><form id="remove-resume-form" data-id="${id}"><p class="error" role="alert"></p><div class="form-actions"><button class="btn btn-danger">Remove resume</button><button type="button" class="btn btn-secondary" data-action="close-modal">Keep resume</button></div></form>`,
         );
-    } else if (action === "toggle-job") {
+    } else if (action === "toggle-job" || action === "archive-job") {
+      if (user()?.role !== "recruiter") return;
       const job = db.jobs.find(
         (job) => job.id === id && job.ownerId === user()?.id,
       );
       if (!job) return;
+      if (action === "archive-job") {
+        const restoring = job.status === "Archived";
+        job.status = restoring ? "Closed" : "Archived";
+        await persist();
+        render();
+        toast(restoring ? "Posting restored as closed." : "Posting archived.");
+        return;
+      }
+      if (job.status === "Archived") return;
       if (job.status === "Closed" && job.deadline < today()) {
         navigate("edit-job/" + id);
         toast("Update the deadline before reopening this job.");
@@ -1254,6 +1698,14 @@ document.addEventListener("change", async (event) => {
   }
   if (input.id === "candidate-job")
     navigate("candidates" + (input.value ? "/" + input.value : ""));
+  if (input.id === "candidate-status") {
+    candidateFilters.status = input.value;
+    renderCandidates();
+  }
+  if (input.id === "candidate-date") {
+    candidateFilters.date = input.value;
+    renderCandidates();
+  }
 });
 window.addEventListener("hashchange", () => {
   render();

@@ -24,11 +24,11 @@ after(async () => {
   fs.rmSync(dataDirectory, { recursive: true, force: true });
 });
 
-async function post(data, endpoint = "/api/register", origin = base) {
+async function post(data, endpoint = "/api/register", origin = base, cookie) {
   const response = await fetch(origin + endpoint, {
-    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data),
+    method: "POST", headers: { "Content-Type": "application/json", ...(cookie ? { Cookie: cookie } : {}) }, body: JSON.stringify(data),
   });
-  return { status: response.status, body: await response.json() };
+  return { status: response.status, body: await response.json(), cookie: response.headers.get("set-cookie")?.split(";")[0] };
 }
 
 test("1.7: registers a seeker and returns public account details", async () => {
@@ -154,13 +154,32 @@ test("limits repeated failed login attempts", async () => {
   }
 });
 
+const feedbackResumeContent = Buffer.from("%PDF-1.4 test resume").toString("base64");
+
+async function uploadFeedbackResume(origin) {
+  const account = await post(valid, "/api/register", origin);
+  assert.equal(account.status, 201);
+  const upload = await post({
+    action: "put",
+    id: "feedback-resume",
+    name: "candidate.pdf",
+    content: feedbackResumeContent,
+  }, "/api/files", origin, account.cookie);
+  assert.equal(upload.status, 200);
+  const saved = await post({
+    person: { id: account.body.user.id, name: valid.name, profile: {}, saved: [], resumes: [{ id: "feedback-resume" }] },
+  }, "/api/state", origin, account.cookie);
+  assert.equal(saved.status, 200);
+  return account.cookie;
+}
+
 test("resume feedback reports a clear setup error when OpenAI is not configured", async () => {
-  const result = await post({ resumeText: "Alex Candidate\nSkills: JavaScript" }, "/api/resume-feedback");
+  const result = await post({ resumeId: "feedback-resume" }, "/api/resume-feedback");
   assert.equal(result.status, 503);
   assert.match(result.body.message, /not configured/i);
 });
 
-test("resume feedback sends validated text to OpenAI without exposing its key", async () => {
+test("resume feedback sends the saved resume file to OpenAI without exposing its key", async () => {
   const requests = [];
   const feedbackFile = path.join(dataDirectory, "feedback-users.sqlite");
   const feedbackServer = await createServer({
@@ -177,9 +196,19 @@ test("resume feedback sends validated text to OpenAI without exposing its key", 
   await new Promise(resolve => feedbackServer.listen(0, "127.0.0.1", resolve));
   try {
     const origin = `http://127.0.0.1:${feedbackServer.address().port}`;
-    const result = await post({ resumeText: "Alex Candidate\nSkills: JavaScript", targetRole: "Junior developer" }, "/api/resume-feedback", origin);
+    const cookie = await uploadFeedbackResume(origin);
+    const result = await post({ resumeId: "feedback-resume", targetRole: "Junior developer" }, "/api/resume-feedback", origin, cookie);
     assert.equal(result.status, 200);
     assert.match(result.body.feedback, /Strengths/);
+    assert.equal(result.body.resumeName, "candidate.pdf");
+    assert.equal(result.body.targetRole, "Junior developer");
+    const [role, file] = JSON.parse(requests[0].options.body).input[0].content;
+    assert.equal(role.text, "Target role: Junior developer");
+    assert.deepEqual(file, {
+      type: "input_file",
+      filename: "candidate.pdf",
+      file_data: "data:application/pdf;base64," + feedbackResumeContent,
+    });
     assert.equal(requests.length, 1);
     assert.equal(requests[0].url, "https://api.openai.com/v1/responses");
     assert.equal(requests[0].options.headers.Authorization, "Bearer test-key");
@@ -201,7 +230,8 @@ test("resume feedback handles an unavailable OpenAI response without exposing pr
   await new Promise(resolve => feedbackServer.listen(0, "127.0.0.1", resolve));
   try {
     const origin = `http://127.0.0.1:${feedbackServer.address().port}`;
-    const result = await post({ resumeText: "Alex Candidate\nSkills: JavaScript" }, "/api/resume-feedback", origin);
+    const cookie = await uploadFeedbackResume(origin);
+    const result = await post({ resumeId: "feedback-resume" }, "/api/resume-feedback", origin, cookie);
     assert.equal(result.status, 503);
     assert.match(result.body.message, /temporarily unavailable/i);
     assert.doesNotMatch(result.body.message, /provider detail|OpenAI/i);
@@ -219,7 +249,8 @@ test("resume feedback handles malformed OpenAI JSON", async () => {
   await new Promise(resolve => feedbackServer.listen(0, "127.0.0.1", resolve));
   try {
     const origin = `http://127.0.0.1:${feedbackServer.address().port}`;
-    const result = await post({ resumeText: "Alex Candidate\nSkills: JavaScript" }, "/api/resume-feedback", origin);
+    const cookie = await uploadFeedbackResume(origin);
+    const result = await post({ resumeId: "feedback-resume" }, "/api/resume-feedback", origin, cookie);
     assert.equal(result.status, 503);
     assert.match(result.body.message, /unreadable response/i);
   } finally {
@@ -236,7 +267,8 @@ test("resume feedback handles an OpenAI response with no usable advice", async (
   await new Promise(resolve => feedbackServer.listen(0, "127.0.0.1", resolve));
   try {
     const origin = `http://127.0.0.1:${feedbackServer.address().port}`;
-    const result = await post({ resumeText: "Alex Candidate\nSkills: JavaScript" }, "/api/resume-feedback", origin);
+    const cookie = await uploadFeedbackResume(origin);
+    const result = await post({ resumeId: "feedback-resume" }, "/api/resume-feedback", origin, cookie);
     assert.equal(result.status, 503);
     assert.match(result.body.message, /no advice/i);
   } finally {
@@ -253,7 +285,8 @@ test("resume feedback rejects an incomplete OpenAI response", async () => {
   await new Promise(resolve => feedbackServer.listen(0, "127.0.0.1", resolve));
   try {
     const origin = `http://127.0.0.1:${feedbackServer.address().port}`;
-    const result = await post({ resumeText: "Alex Candidate\nSkills: JavaScript" }, "/api/resume-feedback", origin);
+    const cookie = await uploadFeedbackResume(origin);
+    const result = await post({ resumeId: "feedback-resume" }, "/api/resume-feedback", origin, cookie);
     assert.equal(result.status, 503);
     assert.match(result.body.message, /temporarily unavailable/i);
   } finally {
@@ -274,10 +307,11 @@ test("resume feedback limits repeated requests before calling OpenAI", async () 
   await new Promise(resolve => feedbackServer.listen(0, "127.0.0.1", resolve));
   try {
     const origin = `http://127.0.0.1:${feedbackServer.address().port}`;
-    const request = { resumeText: "Alex Candidate\nSkills: JavaScript" };
-    assert.equal((await post(request, "/api/resume-feedback", origin)).status, 200);
-    assert.equal((await post(request, "/api/resume-feedback", origin)).status, 200);
-    const result = await post(request, "/api/resume-feedback", origin);
+    const cookie = await uploadFeedbackResume(origin);
+    const request = { resumeId: "feedback-resume" };
+    assert.equal((await post(request, "/api/resume-feedback", origin, cookie)).status, 200);
+    assert.equal((await post(request, "/api/resume-feedback", origin, cookie)).status, 200);
+    const result = await post(request, "/api/resume-feedback", origin, cookie);
     assert.equal(result.status, 429);
     assert.match(result.body.message, /too many attempts/i);
     assert.equal(calls, 2);
@@ -296,7 +330,8 @@ test("resume feedback validates its input before calling OpenAI", async () => {
   await new Promise(resolve => validationServer.listen(0, "127.0.0.1", resolve));
   try {
     const origin = `http://127.0.0.1:${validationServer.address().port}`;
-    const result = await post({ resumeText: " " }, "/api/resume-feedback", origin);
+    const cookie = await uploadFeedbackResume(origin);
+    const result = await post({ resumeId: " " }, "/api/resume-feedback", origin, cookie);
     assert.equal(result.status, 400);
     assert.equal(calls, 0);
   } finally {
