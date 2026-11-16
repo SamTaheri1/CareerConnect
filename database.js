@@ -134,7 +134,7 @@ class Database {
         }
 
         if (
-          !["Open", "Closed"].includes(job.status) ||
+          !["Open", "Closed", "Archived"].includes(job.status) ||
           !Number.isFinite(job.min) ||
           !Number.isFinite(job.max) ||
           job.min < 0 ||

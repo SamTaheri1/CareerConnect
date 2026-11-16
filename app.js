@@ -201,7 +201,7 @@ async function renderNotifications() {
     }
 
     const items = data.notifications || [];
-    updateNotificationBell(items);
+    acknowledgeNotificationBell(accountId, items);
     const isRecruiter = user()?.role === "recruiter";
 
     shell(`
@@ -276,10 +276,22 @@ async function renderNotifications() {
   }
 }
 
+const seenNotificationIds = new Map();
+
+function acknowledgeNotificationBell(accountId, items) {
+  seenNotificationIds.set(accountId, new Set(items.map(item => item.id)));
+  updateNotificationBell([]);
+}
+
+document.addEventListener("click", event => {
+  if (event.target.closest("#notification-bell")) updateNotificationBell([]);
+});
+
 function updateNotificationBell(items) {
   const bell = document.querySelector("#notification-bell");
   if (!bell) return;
-  const unread = items.some(item => !item.readAt);
+  const seen = seenNotificationIds.get(user()?.id);
+  const unread = items.some(item => !item.readAt && !seen?.has(item.id));
   bell.querySelector(".notification-dot").hidden = !unread;
   bell.setAttribute("aria-label", unread ? "Notifications, unread alerts" : "Notifications");
 }
@@ -289,7 +301,7 @@ async function refreshNotificationBell() {
   if (!accountId || location.hash === "#notifications") return;
   try {
     const { notifications } = await requestData("/notifications");
-    if (user()?.id === accountId) updateNotificationBell(notifications);
+    if (user()?.id === accountId && location.hash !== "#notifications") updateNotificationBell(notifications);
   } catch {
     // Keep the last known badge if the refresh fails.
   }
@@ -477,14 +489,17 @@ function normalizeText(text) {
 
 
 
+function normalizeJobKeyword(text) {
+  return normalizeText(text).replace(/\bq\s*&\s*a\b/g, "qa");
+}
 function filteredJobs() {
-  const query = normalizeText(filters.query);
+  const query = normalizeJobKeyword(filters.query);
   const place = normalizeText(filters.location);
 
   return db.jobs
     .filter((job) =>
       isOpen(job) &&
-      normalizeText(
+      normalizeJobKeyword(
         `${job.title} ${job.company} ${job.description} ${job.tags.join(" ")}`
       ).includes(query) &&
       normalizeText(job.location).includes(place) &&
@@ -627,6 +642,53 @@ async function loadApplications() {
     ));
   }
 }
+function readSavedAdvice(key) {
+  try {
+    const entries = JSON.parse(localStorage.getItem(key) || "[]");
+    return Array.isArray(entries) ? entries : [];
+  } catch {
+    return [];
+  }
+}
+
+function formatApplicationAdvice(feedback) {
+  const emphasize = text => e(text).replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  const blocks = [];
+  let bullets = [];
+  function finishList() {
+    if (!bullets.length) return;
+    blocks.push(`<ul>${bullets.join("")}</ul>`);
+    bullets = [];
+  }
+  for (const line of feedback.split(/\r?\n/)) {
+    const text = line.trim();
+    const item = text.match(/^[-*]\s+(.+)$/);
+    if (item) {
+      bullets.push(`<li>${emphasize(item[1])}</li>`);
+      continue;
+    }
+    finishList();
+    const heading = text.match(/^#{1,6}\s+(.+)$/);
+    if (heading) blocks.push(`<h3>${emphasize(heading[1])}</h3>`);
+    else if (text) blocks.push(`<p>${emphasize(text)}</p>`);
+  }
+  finishList();
+  return blocks.join("");
+}
+
+function savedApplicationAdviceKey() {
+  return "careerconnect:application-advice:" + user().id;
+}
+
+function renderSavedApplicationAdvice() {
+  const panel = document.querySelector("#saved-application-advice");
+  if (!panel) return;
+  const entries = readSavedAdvice(savedApplicationAdviceKey());
+  panel.innerHTML = `<h2>Saved Advices</h2>${entries.length ? entries.map(entry => `
+    <h3 class="saved-advice"><button type="button" class="btn btn-secondary" data-action="open-saved-advice" data-id="${e(entry.applicationId)}">${e(entry.title)}</button></h3>
+  `).join("") : '<p class="hint">No saved advice yet.</p>'}`;
+}
+
 function renderApplications() {
   const summary = applicationSummary(db.applications, user().id);
   const all = summary.applications;
@@ -639,7 +701,7 @@ function renderApplications() {
     `<div class="page-title"><div><div class="eyebrow">Every step forward</div><h1>My applications</h1><p>Your search, with a little more perspective.</p></div><a class="btn btn-secondary" href="#jobs">Find more jobs ${icon("arrow")}</a></div><div class="stats application-stats" aria-label="Application summary" aria-live="polite"><div class="stat"><strong>${summary.total}</strong><span>Total applications</span></div>${statuses.map((status) => `<div class="stat"><strong>${summary.counts[status]}</strong><span>${status}</span></div>`).join("")}</div><div class="profile-layout"><section><div class="toolbar"><h2>Application history</h2><select id="application-filter" aria-label="Filter applications by status">${["All", ...statuses].map((status) => `<option ${applicationFilter === status ? "selected" : ""}>${status}</option>`).join("")}</select></div>${shown
       .map((app) => {
         const job = db.jobs.find((j) => j.id === app.jobId);
-        return `<article class="application">${logo(job)}<div class="grow"><h3><a href="#job/${job.id}">${e(job.title)}</a></h3><p>${e(job.company)} · Applied ${date(app.createdAt)}</p><div class="history">${app.history.map((item) => `${e(item.status)} · ${date(item.date)}`).join(" → ")}</div><button type="button" class="btn btn-secondary" data-action="application-notes" data-id="${e(app.id)}" style="margin-top:12px">My private notes</button></div>${badge(app.status)}</article>`;
+        return `<article class="application">${logo(job)}<div class="grow"><h3><a href="#job/${job.id}">${e(job.title)}</a></h3><p>${e(job.company)} · Applied ${date(app.createdAt)}</p><div class="history">${app.history.map((item) => `${e(item.status)} · ${date(item.date)}`).join(" → ")}</div><button type="button" class="btn btn-secondary" data-action="application-notes" data-id="${e(app.id)}" style="margin-top:12px">My private notes</button><div class="form-actions"><button type="button" class="btn btn-primary" data-action="application-advice" data-id="${e(app.id)}">Get next-step advice ${icon("arrow")}</button></div><div class="resume-feedback-result" data-application-advice aria-live="polite"></div></div>${badge(app.status)}</article>`;
       })
       .join("") ||
     empty(
@@ -650,8 +712,9 @@ function renderApplications() {
         ? "Choose another status to see your applications."
         : "Find a role you like and send your first application.",
     )
-    } </section><aside class="panel"><h2>On your radar</h2>${deadlineList(db.jobs.filter((job) => user().saved.includes(job.id) && !all.some((app) => app.jobId === job.id)))}</aside></div>`,
+    } </section><aside class="panel"><h2>On your radar</h2>${deadlineList(db.jobs.filter((job) => user().saved.includes(job.id) && !all.some((app) => app.jobId === job.id)))}<section id="saved-application-advice"></section></aside></div>`,
   );
+  renderSavedApplicationAdvice();
 }
 async function openApplicationNotes(applicationId) {
   const app = db.applications.find(
@@ -760,7 +823,7 @@ function renderPostings() {
     .filter((job) => job.ownerId === user().id)
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   shell(
-    `<div class="page-title"><div><div class="eyebrow">Build your team</div><h1>My job postings</h1><p>Give good people a place to do good work.</p></div><a href="#new-job" class="btn btn-primary">+ Post a job</a></div>${jobs.map((job) => `<article class="job-card recruiter-job"><div class="job-top">${logo(job)}<div class="grow"><h3><a href="#job/${job.id}">${e(job.title)}</a></h3><p>${e(job.company)} · ${e(job.location)} · ${e(job.type)}</p></div></div><div class="card-bottom"><div class="inline-actions">${badge(isOpen(job) ? "Open" : "Closed")}<span class="small muted">${db.applications.filter((app) => app.jobId === job.id).length} applicants · Closes ${date(job.deadline)}</span></div><div class="inline-actions"><a class="btn btn-text" href="#candidates/${job.id}">View applicants</a><a class="btn btn-secondary" href="#edit-job/${job.id}">Edit</a><button class="btn btn-secondary" data-action="toggle-job" data-id="${job.id}">${job.status === "Open" ? "Close" : "Reopen"}</button></div></div></article>`).join("") || empty("Your first hire starts here", "Post a role with the details candidates need to apply.", '<a href="#new-job" class="btn btn-primary">Create a job posting</a>')}`,
+    `<div class="page-title"><div><div class="eyebrow">Build your team</div><h1>My job postings</h1><p>Give good people a place to do good work.</p></div><a href="#new-job" class="btn btn-primary">+ Post a job</a></div>${jobs.map((job) => `<article class="job-card recruiter-job"><div class="job-top">${logo(job)}<div class="grow"><h3><a href="#job/${job.id}">${e(job.title)}</a></h3><p>${e(job.company)} · ${e(job.location)} · ${e(job.type)}</p></div></div><div class="card-bottom"><div class="inline-actions">${badge(job.status === "Archived" ? "Archived" : isOpen(job) ? "Open" : "Closed")}<span class="small muted">${db.applications.filter((app) => app.jobId === job.id).length} applicants · Closes ${date(job.deadline)}</span></div><div class="inline-actions"><a class="btn btn-text" href="#candidates/${job.id}">View applicants</a><a class="btn btn-secondary" href="#edit-job/${job.id}">Edit</a>${job.status === "Archived" ? "" : `<button class="btn btn-secondary" data-action="toggle-job" data-id="${job.id}">${job.status === "Open" ? "Close" : "Reopen"}</button>`}<button class="btn btn-secondary" data-action="archive-job" data-id="${job.id}">${job.status === "Archived" ? "Restore" : "Archive"}</button></div></div></article>`).join("") || empty("Your first hire starts here", "Post a role with the details candidates need to apply.", '<a href="#new-job" class="btn btn-primary">Create a job posting</a>')}`,
   );
 }
 function selectField(label, name, options, value) {
@@ -818,7 +881,14 @@ function clearResumePreview() {
   resumePreviewUrl = null;
   modal.classList.remove("resume-preview-modal");
 }
+modal.addEventListener("click", (event) => {
+  if (event.target !== modal || !modal.classList.contains("saved-advice-modal")) return;
+  const bounds = modal.getBoundingClientRect();
+  if (event.clientX < bounds.left || event.clientX > bounds.right ||
+      event.clientY < bounds.top || event.clientY > bounds.bottom) modal.close();
+});
 modal.addEventListener("close", () => {
+  modal.classList.remove("saved-advice-modal");
   // A queued close event must not clear a newly opened dialog.
   if (!modal.open) clearResumePreview();
 });
@@ -1258,6 +1328,51 @@ document.addEventListener("click", async (event) => {
   const button = event.target.closest("[data-action]");
   if (!button) return;
   const { action, id } = button.dataset;
+  if (action === "open-saved-advice") {
+    if (user()?.role !== "seeker") return;
+    const entry = readSavedAdvice(savedApplicationAdviceKey()).find(item => item.applicationId === id);
+    if (!entry) return;
+    openModal(`<p class="eyebrow">Saved advice</p><h2 id="modal-title">${e(entry.title)}</h2>
+      <div class="resume-feedback-result">${formatApplicationAdvice(entry.advice)}</div>`);
+    modal.classList.add("saved-advice-modal");
+    return;
+  }
+  if (action === "application-advice") {
+    if (button.disabled) return;
+    const output = button.closest(".application").querySelector("[data-application-advice]");
+    const accountId = user().id;
+    const title = button.closest(".application").querySelector("h3").textContent;
+    button.disabled = true;
+    output.textContent = "Preparing next-step advice…";
+    try {
+      const { advice } = await requestData("/application-advice", { applicationId: id });
+      if (!output.isConnected || user()?.id !== accountId) return;
+      output.innerHTML = formatApplicationAdvice(advice);
+      const save = document.createElement("button");
+      save.type = "button";
+      save.className = "btn btn-secondary";
+      save.textContent = "Save advice";
+      save.addEventListener("click", () => {
+        if (user()?.id !== accountId) return;
+        try {
+          const key = savedApplicationAdviceKey();
+          const entries = readSavedAdvice(key).filter(entry => entry.applicationId !== id);
+          localStorage.setItem(key, JSON.stringify([{ applicationId: id, title, advice }, ...entries]));
+          renderSavedApplicationAdvice();
+          save.textContent = "Advice saved";
+          save.disabled = true;
+        } catch {
+          toast("Could not save advice in this browser.");
+        }
+      });
+      output.append(save);
+    } catch {
+      output.textContent = "Could not get next-step advice. Please try again later.";
+    } finally {
+      button.disabled = false;
+    }
+    return;
+  }
   try {
     if (action === "application-notes") {
       if (modal.open) modal.close();
@@ -1389,11 +1504,21 @@ document.addEventListener("click", async (event) => {
         openModal(
           `<h2 id="modal-title">Remove this resume?</h2><p>${e(resume.name)} will be removed from your profile. Applications you already sent will keep their own copy.</p><form id="remove-resume-form" data-id="${id}"><p class="error" role="alert"></p><div class="form-actions"><button class="btn btn-danger">Remove resume</button><button type="button" class="btn btn-secondary" data-action="close-modal">Keep resume</button></div></form>`,
         );
-    } else if (action === "toggle-job") {
+    } else if (action === "toggle-job" || action === "archive-job") {
+      if (user()?.role !== "recruiter") return;
       const job = db.jobs.find(
         (job) => job.id === id && job.ownerId === user()?.id,
       );
       if (!job) return;
+      if (action === "archive-job") {
+        const restoring = job.status === "Archived";
+        job.status = restoring ? "Closed" : "Archived";
+        await persist();
+        render();
+        toast(restoring ? "Posting restored as closed." : "Posting archived.");
+        return;
+      }
+      if (job.status === "Archived") return;
       if (job.status === "Closed" && job.deadline < today()) {
         navigate("edit-job/" + id);
         toast("Update the deadline before reopening this job.");

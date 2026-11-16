@@ -30,6 +30,9 @@ CREATE TABLE IF NOT EXISTS jobs (
   status TEXT NOT NULL CHECK (status IN ('Open', 'Closed')),
   deadline TEXT NOT NULL, created_at TEXT NOT NULL
 );
+-- Permit archiving in databases created before this status existed.
+ALTER TABLE jobs DROP CONSTRAINT IF EXISTS jobs_status_check;
+ALTER TABLE jobs ADD CONSTRAINT jobs_status_check CHECK (status IN ('Open', 'Closed', 'Archived'));
 CREATE TABLE IF NOT EXISTS resumes (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL REFERENCES users(id),
