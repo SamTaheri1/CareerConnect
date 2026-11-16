@@ -7,8 +7,8 @@ const { Database } = require("./database");
 const { createLoginHandler } = require("./auth/login");
 const { createRegisterHandler } = require("./auth/register");
 const { createResumeFeedbackHandler } = require("./ai/resume-feedback");
-const { createApplicationAdviceHandler } = require("./ai/application-advice");
 const { AuthRateLimiter } = require("./rate-limiter");
+const { createApplicationAdviceHandler } = require("./ai/application-advice");
 
 function json(response, status, body) {
   response.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" });
@@ -38,12 +38,26 @@ async function createServer(options = {}) {
   const store = options.store || new Database(config);
   try { await store.initialize(); } catch (error) { await store.close(); throw error; }
   const limiter = new AuthRateLimiter(config);
-  const api = {
-    [`${config.apiBasePath}/register`]: createRegisterHandler({ store, config }),
-    [`${config.apiBasePath}/login`]: createLoginHandler({ store, config, limiter }),
-    [`${config.apiBasePath}/application-advice`]: createApplicationAdviceHandler({ config, limiter, store, fetch: options.fetch }),
-    [`${config.apiBasePath}/resume-feedback`]: createResumeFeedbackHandler({ config, limiter, store, fetch: options.fetch }),
-  };
+ 
+const api = {
+  [`${config.apiBasePath}/register`]: createRegisterHandler({ store, config }),
+  [`${config.apiBasePath}/login`]: createLoginHandler({ store, config, limiter }),
+  [`${config.apiBasePath}/application-advice`]:
+    createApplicationAdviceHandler({
+      config,
+      limiter,
+      store,
+      fetch: options.fetch
+    }),
+  [`${config.apiBasePath}/resume-feedback`]:
+    createResumeFeedbackHandler({
+      config,
+      limiter,
+      store,
+      fetch: options.fetch
+    }),
+};
+
   const files = { "/": ["index.html", "text/html"], "/index.html": ["index.html", "text/html"], "/styles.css": ["styles.css", "text/css"], "/data.js": ["data.js", "text/javascript"], "/app.js": ["app.js", "text/javascript"] };
 
   const server = http.createServer(async (request, response) => {
@@ -64,6 +78,17 @@ async function createServer(options = {}) {
         const updated = (await store.session(request));
         return json(response, 200, (await store.state(updated)));
       }
+      if (url.pathname === `${config.apiBasePath}/notifications`) {
+        const person = await store.session(request);
+        if (!person) return json(response, 401, { message: "Please log in." });
+        if (request.method === "GET") return json(response, 200, { notifications: await store.notifications(person) });
+        if (request.method === "POST") {
+          const data = await readJsonBody(request, 4096);
+          await store.markNotificationRead(person, data.id);
+          return json(response, 200, { message: "Marked as read." });
+        }
+        return json(response, 405, { message: "Method not allowed." });
+      }
       if (url.pathname === `${config.apiBasePath}/files`) {
         const person = (await store.session(request));
         if (request.method === "GET") {
@@ -76,7 +101,7 @@ async function createServer(options = {}) {
         (await store.file(person, data.action, data.id, data));
         return json(response, 200, { message: "Resume saved." });
       }
-           if (url.pathname === `${config.apiBasePath}/application-notes`) {
+      if (url.pathname === `${config.apiBasePath}/application-notes`) {
         const person = (await store.session(request));
 
         if (!person) {

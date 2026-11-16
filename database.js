@@ -59,9 +59,11 @@ class Database {
     return { ...job, ownerId: owner_id, createdAt: created_at };
   }
   application(row) {
-    return { id: row.id, jobId: row.job_id, userId: row.user_id, resumeId: row.resume_id,
+    return {
+      id: row.id, jobId: row.job_id, userId: row.user_id, resumeId: row.resume_id,
       name: row.name, email: row.email, note: row.note, profile: JSON.parse(row.profile),
-      resumeName: row.resume_name, status: row.status, createdAt: row.created_at, history: JSON.parse(row.history) };
+      resumeName: row.resume_name, status: row.status, createdAt: row.created_at, history: JSON.parse(row.history)
+    };
   }
   async state(person) {
     const jobs = (await this.sql.prepare("SELECT * FROM jobs").all()).map(row => this.job(row));
@@ -80,31 +82,136 @@ class Database {
     const values = [job.id, job.ownerId, ...jobFields.map(key => jobLists.includes(key) ? JSON.stringify(job[key]) : job[key]), job.createdAt];
     (await this.sql.prepare(`INSERT INTO jobs (${columns.join(",")}) VALUES (${columns.map(() => "?").join(",")}) ON CONFLICT(id) DO UPDATE SET ${jobFields.map(key => `${key}=excluded.${key}`).join(",")}`).run(...values));
   }
+
   async save(person, changes) {
     if (!person) fail("Please log in.", 401);
+
     await this.transaction(async () => {
       await this.sql.query("SELECT pg_advisory_xact_lock(734192)");
-      if (changes.person) (await this.saveProfile(person, changes.person));
+
+      if (changes.person) {
+        await this.saveProfile(person, changes.person);
+      }
+
       for (const job of changes.jobs || []) {
-        const old = (await this.sql.prepare("SELECT owner_id FROM jobs WHERE id = ?").get(id(job.id)));
-        if (person.role !== "recruiter" || job.ownerId !== person.id || (old && old.owner_id !== person.id)) fail("You cannot edit this job.", 403);
-        for (const key of jobFields.filter(key => !jobLists.includes(key) && !["min", "max"].includes(key))) {
+        // Retrieve the previous owner and deadline.
+        const old = await this.sql.prepare(
+          "SELECT owner_id, deadline FROM jobs WHERE id = ?"
+        ).get(id(job.id));
+
+        if (
+          person.role !== "recruiter" ||
+          job.ownerId !== person.id ||
+          (old && old.owner_id !== person.id)
+        ) {
+          fail("You cannot edit this job.", 403);
+        }
+
+        // Validate job fields.
+        for (const key of jobFields.filter(
+          key => !jobLists.includes(key) && !["min", "max"].includes(key)
+        )) {
           text(job[key], key, key === "description" ? 10000 : 300, true);
         }
+
         for (const key of jobLists) {
-          if (!Array.isArray(job[key]) || job[key].length > 100 || job[key].some(value => typeof value !== "string" || value.length > 2000)) fail(`Enter valid ${key}.`);
+          if (
+            !Array.isArray(job[key]) ||
+            job[key].length > 100 ||
+            job[key].some(
+              value => typeof value !== "string" || value.length > 2000
+            )
+          ) {
+            fail(`Enter valid ${key}.`);
+          }
         }
-        if (!job.responsibilities.some(value => value.trim()) || !job.requirements.some(value => value.trim())) {
+
+        if (
+          !job.responsibilities.some(value => value.trim()) ||
+          !job.requirements.some(value => value.trim())
+        ) {
           fail("Complete the job responsibilities and requirements.");
         }
-        if (!["Open", "Closed"].includes(job.status) || !Number.isFinite(job.min) || !Number.isFinite(job.max) || job.min < 0 || job.max < job.min) fail("Enter valid job details and salary.");
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(job.deadline) || !Number.isFinite(Date.parse(job.deadline))) fail("Enter a valid deadline.");
-        if (job.status === "Open" && job.deadline < new Date().toISOString().slice(0, 10)) fail("Choose today or a future date for the deadline.");
-        (await this.saveJob({ ...job, createdAt: new Date().toISOString() }));
+
+        if (
+          !["Open", "Closed"].includes(job.status) ||
+          !Number.isFinite(job.min) ||
+          !Number.isFinite(job.max) ||
+          job.min < 0 ||
+          job.max < job.min
+        ) {
+          fail("Enter valid job details and salary.");
+        }
+
+        if (
+          !/^\d{4}-\d{2}-\d{2}$/.test(job.deadline) ||
+          !Number.isFinite(Date.parse(job.deadline))
+        ) {
+          fail("Enter a valid deadline.");
+        }
+
+        if (
+          job.status === "Open" &&
+          job.deadline < new Date().toISOString().slice(0, 10)
+        ) {
+          fail("Choose today or a future date for the deadline.");
+        }
+
+        // Detect a deadline change on an existing posting.
+        const previousDeadline = old?.deadline instanceof Date
+          ? old.deadline.toISOString().slice(0, 10)
+          : old?.deadline
+            ? String(old.deadline).slice(0, 10)
+            : null;
+
+        const deadlineChanged =
+          previousDeadline !== null &&
+          previousDeadline !== job.deadline;
+
+        // Save the posting before generating notifications.
+        await this.saveJob({
+          ...job,
+          createdAt: new Date().toISOString()
+        });
+
+        if (deadlineChanged) {
+          // Notify seekers who saved this job or applied to it.
+          const recipients = await this.sql.prepare(`
+          SELECT user_id FROM saved_jobs WHERE job_id = ?
+          UNION
+          SELECT user_id FROM applications WHERE job_id = ?
+        `).all(job.id, job.id);
+
+          const now = new Date().toISOString();
+
+          for (const recipient of recipients) {
+            await this.sql.prepare(`
+            INSERT INTO notifications
+              (id, user_id, job_id, kind, title, message, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+          `).run(
+              randomBytes(16).toString("hex"),
+              recipient.user_id,
+              job.id,
+              "deadline_change",
+              "Application deadline changed",
+              `The application deadline for ${job.title} changed from ${previousDeadline} to ${job.deadline}.`,
+              now
+            );
+          }
+
+          console.log(
+            `Deadline updated for ${job.title}: ${previousDeadline} -> ${job.deadline}`
+          );
+        }
       }
-      for (const application of changes.applications || []) (await this.saveApplication(person, application));
+
+      for (const application of changes.applications || []) {
+        await this.saveApplication(person, application);
+      }
     });
   }
+
   async saveProfile(person, value) {
     if (value.id !== person.id) fail("You cannot change this profile.", 403);
     const name = text(value.name, "name", 80, true);
@@ -130,29 +237,170 @@ class Database {
       (await this.sql.prepare("UPDATE resumes SET listed = 1 WHERE id = ?").run(resume.id));
     }
   }
-  async saveApplication(person, value) {
-    const old = (await this.sql.prepare("SELECT * FROM applications WHERE id = ?").get(id(value.id)));
-    const job = (await this.sql.prepare("SELECT * FROM jobs WHERE id = ?").get(id(old?.job_id || value.jobId)));
-    if (old) {
-      if (job.owner_id !== person.id || person.role !== "recruiter") fail("You cannot update this application.", 403);
-      if (!statuses.includes(value.status)) fail("Choose a valid application status.");
-      if (old.status !== value.status) {
-        const history = [...JSON.parse(old.history), { status: value.status, date: new Date().toISOString() }];
-        (await this.sql.prepare("UPDATE applications SET status = ?, history = ? WHERE id = ?").run(value.status, JSON.stringify(history), value.id));
+  async notifications(person) {
+    if (!person) fail("Please log in.", 401);
+    // Deadline reminders are generated when a seeker checks notifications.
+    if (person.role === "seeker") {
+      const rows = await this.sql.prepare(`SELECT j.id, j.title, j.deadline FROM saved_jobs s
+        JOIN jobs j ON j.id = s.job_id WHERE s.user_id = ? AND j.status = 'Open'`).all(person.id);
+      const now = new Date();
+      for (const job of rows) {
+        const end = new Date(job.deadline + 'T23:59:59Z');
+        const days = (end - now) / 86400000;
+        if (days >= 0 && days <= 7) {
+          await this.sql.prepare(`INSERT INTO notifications (id,user_id,job_id,kind,title,message,created_at)
+            VALUES (?,?,?,?,?,?,?) ON CONFLICT DO NOTHING`).run(
+            randomBytes(16).toString('hex'), person.id, job.id, 'deadline',
+            'Upcoming application deadline', `${job.title} closes on ${job.deadline}.`, now.toISOString());
+        }
       }
+    }
+    return this.sql.prepare(`SELECT id,application_id AS "applicationId",job_id AS "jobId",kind,title,message,
+      created_at AS "createdAt",read_at AS "readAt" FROM notifications
+      WHERE user_id = ? ORDER BY created_at DESC LIMIT 100`).all(person.id);
+  }
+  async markNotificationRead(person, notificationId) {
+    if (!person) fail("Please log in.", 401);
+    const result = await this.sql.prepare(`UPDATE notifications SET read_at = ? WHERE id = ? AND user_id = ?`)
+      .run(new Date().toISOString(), id(notificationId), person.id);
+    if (!result.changes) fail("Notification not found.", 404);
+  }
+
+  async saveApplication(person, value) {
+    const old = await this.sql.prepare(
+      "SELECT * FROM applications WHERE id = ?"
+    ).get(id(value.id));
+
+    const job = await this.sql.prepare(
+      "SELECT * FROM jobs WHERE id = ?"
+    ).get(id(old?.job_id || value.jobId));
+
+    // CASE 1: Existing application.
+    // Preserve US22 notifications when a recruiter changes the status.
+    if (old) {
+      if (!job || job.owner_id !== person.id || person.role !== "recruiter") {
+        fail("You cannot update this application.", 403);
+      }
+
+      if (!statuses.includes(value.status)) {
+        fail("Choose a valid application status.");
+      }
+
+      if (old.status !== value.status) {
+        const history = [
+          ...JSON.parse(old.history),
+          { status: value.status, date: new Date().toISOString() }
+        ];
+
+        await this.sql.prepare(
+          "UPDATE applications SET status = ?, history = ? WHERE id = ?"
+        ).run(value.status, JSON.stringify(history), value.id);
+
+        const title = value.status === "Interview"
+          ? "Interview status update"
+          : "Application status updated";
+
+        const message =
+          `Your application for ${job.title} changed to ${value.status}.`;
+
+        await this.sql.prepare(`
+        INSERT INTO notifications
+          (id, user_id, application_id, job_id,
+           kind, title, message, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+          randomBytes(16).toString("hex"),
+          old.user_id,
+          old.id,
+          job.id,
+          value.status === "Interview" ? "interview_status" : "status",
+          title,
+          message,
+          new Date().toISOString()
+        );
+      }
+
       return;
     }
-    if (person.role !== "seeker" || value.userId !== person.id) fail("Only job seekers can apply.", 403);
-    if (!job || job.status !== "Open" || job.deadline < new Date().toISOString().slice(0, 10)) fail("This job is no longer accepting applications.");
-    if ((await this.sql.prepare("SELECT 1 FROM applications WHERE user_id = ? AND job_id = ?").get(person.id, job.id))) fail("You have already applied for this job.", 409);
-    const resume = (await this.sql.prepare("SELECT * FROM resumes WHERE id = ? AND user_id = ? AND listed = 0").get(id(value.resumeId), person.id));
-    if (!resume || (await this.sql.prepare("SELECT 1 FROM applications WHERE resume_id = ?").get(resume.id))) fail("Choose a valid resume copy.");
+
+    // CASE 2: A job seeker submits a new application.
+    if (person.role !== "seeker" || value.userId !== person.id) {
+      fail("Only job seekers can apply.", 403);
+    }
+
+    if (
+      !job ||
+      job.status !== "Open" ||
+      job.deadline < new Date().toISOString().slice(0, 10)
+    ) {
+      fail("This job is no longer accepting applications.");
+    }
+
+    // Prevent duplicate applications.
+    if (
+      await this.sql.prepare(
+        "SELECT 1 FROM applications WHERE user_id = ? AND job_id = ?"
+      ).get(person.id, job.id)
+    ) {
+      fail("You have already applied for this job.", 409);
+    }
+
+    // Validate the job seeker's resume.
+    const resume = await this.sql.prepare(
+      "SELECT * FROM resumes WHERE id = ? AND user_id = ? AND listed = 0"
+    ).get(id(value.resumeId), person.id);
+
+    if (
+      !resume ||
+      await this.sql.prepare(
+        "SELECT 1 FROM applications WHERE resume_id = ?"
+      ).get(resume.id)
+    ) {
+      fail("Choose a valid resume copy.");
+    }
+
     const profile = (await this.state(person)).users[0].profile;
     const now = new Date().toISOString();
-    (await this.sql.prepare("INSERT INTO applications VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run(
-      value.id, job.id, person.id, resume.id, text(value.name, "name", 80, true), validateEmail(value.email),
-      text(value.note || "", "note", 2000), JSON.stringify(profile), resume.name, "Applied", now, JSON.stringify([{ status: "Applied", date: now }])));
+
+    // Save the new application.
+    await this.sql.prepare(`
+    INSERT INTO applications
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+      value.id,
+      job.id,
+      person.id,
+      resume.id,
+      text(value.name, "name", 80, true),
+      validateEmail(value.email),
+      text(value.note || "", "note", 2000),
+      JSON.stringify(profile),
+      resume.name,
+      "Applied",
+      now,
+      JSON.stringify([{ status: "Applied", date: now }])
+    );
+
+    // US23.1 and US23.2:
+    // Notify the recruiter who owns the job posting.
+    // The notification is saved in the same database transaction.
+    await this.sql.prepare(`
+    INSERT INTO notifications
+      (id, user_id, application_id, job_id,
+       kind, title, message, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+      randomBytes(16).toString("hex"),
+      job.owner_id,
+      value.id,
+      job.id,
+      "new_application",
+      "New job application received",
+      `A job seeker has applied to your posting "${job.title}".`,
+      now
+    );
   }
+ 
   async applicationForAdvice(person, applicationId) {
     if (!person) fail("Please log in.", 401);
     if (person.role !== "seeker") fail("Next-step advice is available to job seekers.", 403);
@@ -174,6 +422,7 @@ class Database {
     if (!resume) fail("Choose an uploaded resume from your profile.", 404);
     return resume;
   }
+
 
   async file(person, action, key, value) {
     return this.transaction(async () => {
@@ -207,7 +456,7 @@ class Database {
     (await this.sql.prepare("INSERT INTO resumes (id, user_id, name, size, content, created_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET name=excluded.name, size=excluded.size, content=excluded.content, created_at=excluded.created_at")
       .run(key, person.id, name, content.length, content, new Date().toISOString()));
   }
-    // USER STORY 17 — APPLICATION NOTES
+  // USER STORY 17 — APPLICATION NOTES
 
   async getApplicationNotes(person, applicationId) {
     if (!person) fail("Please log in.", 401);
@@ -249,8 +498,10 @@ class Database {
       VALUES (?, ?, ?, ?, ?, ?)
     `).run(noteId, applicationId, person.id, noteContent, now, now));
 
-    return { id: noteId, applicationId, content: noteContent,
-             createdAt: now, updatedAt: now };
+    return {
+      id: noteId, applicationId, content: noteContent,
+      createdAt: now, updatedAt: now
+    };
   }
 
   async updateApplicationNote(person, noteId, content) {
