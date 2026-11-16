@@ -68,6 +68,31 @@ CREATE INDEX IF NOT EXISTS application_notes_application
 
 CREATE INDEX IF NOT EXISTS application_notes_user
   ON application_notes(user_id);
+
+-- Sprint 3: Job seeker and recruiter notifications (US22 and US23).
+-- Stores notifications so users can view and mark them as read.
+CREATE TABLE IF NOT EXISTS notifications (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  application_id TEXT REFERENCES applications(id) ON DELETE CASCADE,
+  job_id TEXT REFERENCES jobs(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL,
+  title TEXT NOT NULL,
+  message TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  read_at TEXT,
+  UNIQUE(user_id, application_id, kind, created_at)
+);
+
+-- Retrieve a user's newest notifications efficiently.
+CREATE INDEX IF NOT EXISTS notifications_user_date
+  ON notifications(user_id, created_at DESC);
+
+-- Prevent duplicate deadline reminders for the same saved job.
+CREATE UNIQUE INDEX IF NOT EXISTS notifications_deadline_unique
+  ON notifications(user_id, job_id, kind)
+  WHERE kind = 'deadline';
+
 CREATE TABLE IF NOT EXISTS saved_jobs (
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   job_id TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
