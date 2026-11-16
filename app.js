@@ -167,6 +167,114 @@ let filters = {
 let applicationFilter = "All";
 let candidateFilters = { status: "All", date: "" };
 let applicationNotes = {};
+
+async function renderNotifications() {
+  const accountId = user()?.id;
+
+  shell('<p role="status">Loading notifications...</p>');
+
+  try {
+    const apiBasePath =
+      window.CareerConnectConfig?.apiBasePath || "/api";
+
+    const response = await fetch(
+      apiBasePath + "/notifications",
+      {
+        credentials: "same-origin",
+        cache: "no-store"
+      }
+    );
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(
+        data.message || "Could not load notifications."
+      );
+    }
+
+    if (
+      location.hash !== "#notifications" ||
+      user()?.id !== accountId
+    ) {
+      return;
+    }
+
+    const items = data.notifications || [];
+    const isRecruiter = user()?.role === "recruiter";
+
+    shell(`
+      <div class="page-title">
+        <div>
+          <div class="eyebrow">Stay informed</div>
+          <h1>Notifications</h1>
+          <p>
+            ${isRecruiter
+        ? "New applications to your job postings."
+        : "Application updates and upcoming deadlines."}
+          </p>
+        </div>
+      </div>
+
+      <section class="panel" style="padding:24px">
+        ${items.length
+        ? items.map(n => `
+            <article class="application"
+                     style="margin-bottom:12px">
+
+              <div class="grow">
+                <h3>${e(n.title)}</h3>
+                <p>${e(n.message)}</p>
+
+                <p class="small muted">
+                  ${e(new Date(n.createdAt).toLocaleString())}
+                </p>
+
+                ${isRecruiter &&
+            n.kind === "new_application" &&
+            n.applicationId
+            ? `
+                      <button
+                        type="button"
+                        class="btn btn-secondary"
+                        data-action="view-notification-application"
+                        data-id="${e(n.applicationId)}"
+                        style="margin-top:12px">
+                        View application
+                      </button>
+                    `
+            : ""}
+              </div>
+
+              ${n.readAt
+            ? '<span class="small muted">Read</span>'
+            : `
+                  <button
+                    type="button"
+                    class="btn btn-secondary"
+                    data-action="read-notification"
+                    data-id="${e(n.id)}">
+                    Mark read
+                  </button>
+                `}
+            </article>
+          `).join("")
+        : "<p>No notifications yet.</p>"}
+      </section>
+    `);
+
+  } catch (error) {
+    if (location.hash === "#notifications") {
+      shell(`
+        <div class="panel" style="padding:24px">
+          <h2>Could not load notifications</h2>
+          <p>${e(error.message)}</p>
+        </div>
+      `);
+    }
+  }
+}
+
 function header(route) {
   const person = user();
   const links =
@@ -175,12 +283,14 @@ function header(route) {
         ["jobs", "Find jobs"],
         ["postings", "My postings"],
         ["candidates", "Applications"],
+        ["notifications", "Notifications"],
       ]
       : [
         ["jobs", "Find jobs"],
         ["applications", "My applications"],
         ["saved", "Saved jobs"],
         ["resume-feedback", "Resume feedback"],
+        ["notifications", "Notifications"],
       ];
   document.querySelector("#navigation").innerHTML = links
     .map(
@@ -195,7 +305,7 @@ function header(route) {
     "</a>";
 }
 function shell(content) {
-  main.innerHTML = `<div class="page page-enter">${content}</div>`;
+  main.innerHTML = `<div class="page">${content}</div>`;
 }
 function navigate(route) {
   if (location.hash === `#${route}`) render();
@@ -218,6 +328,7 @@ function render() {
     "new-job": "Post a job",
     "edit-job": "Edit job",
     "resume-feedback": "Resume feedback",
+    notifications: "Notifications",
   };
   document.title = `${names[route] || "Page not found"} · CareerConnect`;
   if (
@@ -226,6 +337,7 @@ function render() {
       "applications",
       "saved",
       "resume-feedback",
+      "notifications",
       "postings",
       "candidates",
       "new-job",
@@ -283,6 +395,9 @@ function render() {
       break;
     case "applications":
       loadApplications();
+      break;
+    case "notifications":
+      renderNotifications();
       break;
     case "postings":
       renderPostings();
@@ -447,138 +562,10 @@ function renderProfile(editing = false) {
   }
 }
 function renderResumeFeedback() {
-  const resumes = user().resumes || [];
-  const options = resumes.map(resume =>
-    `<option value="${e(resume.id)}">${e(resume.name)}</option>`
-  ).join("");
-  shell(`
-    <a class="back-link" href="#profile">${icon("back")} Back to profile</a>
-    <div class="page-title"><div><h1>AI resume feedback</h1></div></div>
-    <section class="panel">
-      ${resumes.length ? `
-        <form id="resume-feedback-form">
-          <label>Resume
-            <select name="resumeId" required>
-              <option value="">Choose an uploaded resume</option>
-              ${options}
-            </select>
-          </label>
-          <label>Target role <span class="hint">(optional)</span>
-            <input name="targetRole" maxlength="120" placeholder="e.g. Junior software developer">
-          </label>
-          <p class="hint">Get feedback sends the selected file to OpenAI for review.</p>
-          <p class="error" role="alert"></p>
-          <div class="form-actions"><button class="btn btn-primary">Get feedback ${icon("arrow")}</button></div>
-        </form>
-      ` : '<p>Upload a resume in <a href="#profile">My profile</a> to get feedback.</p>'}
-      <div id="resume-feedback-result" class="resume-feedback-result" aria-live="polite"></div>
-      <div id="saved-resume-feedback"></div>
-    </section>
-  `);
-  renderSavedResumeFeedback();
+  shell(
+    `<a class="back-link" href="#profile">${icon("back")} Back to profile</a><div class="page-title"><div><div class="eyebrow">AI resume feedback</div><h1>Make your resume clearer.</h1><p>Paste the text you want reviewed. Your API key stays on the server and the feedback is not saved.</p></div></div><section class="panel"><form id="resume-feedback-form"><label>Target role <span class="hint">(optional)</span><input name="targetRole" maxlength="120" placeholder="e.g. Junior software developer"></label><label class="full">Resume text<textarea name="resumeText" required maxlength="8000" rows="18" placeholder="Paste your resume text here. Do not include information you would not want to send to an AI service."></textarea><span class="hint">Up to 8,000 characters. Review the result and make your own decisions.</span></label><p class="error" role="alert"></p><div class="form-actions"><button class="btn btn-primary">Get feedback ${icon("arrow")}</button></div></form><section id="resume-feedback-result" class="application-note" hidden aria-live="polite"></section></section>`,
+  );
 }
-
-function readSavedResumeFeedback(key) {
-  try {
-    const entries = JSON.parse(localStorage.getItem(key) || "[]");
-    return Array.isArray(entries) ? entries : [];
-  } catch {
-    return [];
-  }
-}
-
-function renderSavedResumeFeedback() {
-  const list = document.querySelector("#saved-resume-feedback");
-  const key = "careerconnect:resume-feedback:" + user().id;
-  const entries = readSavedResumeFeedback(key);
-  list.replaceChildren();
-  if (!entries.length) return;
-  const heading = document.createElement("h2");
-  heading.textContent = "Saved feedback";
-  list.append(heading);
-  entries.forEach((entry, index) => {
-    const row = document.createElement("div");
-    row.className = "saved-feedback-entry";
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "btn btn-secondary";
-    button.textContent = entry.targetRole || entry.resumeName;
-    button.title = entry.resumeName;
-
-    const details = document.createElement("div");
-    details.id = "saved-feedback-" + index;
-    details.className = "resume-feedback-result";
-    details.hidden = true;
-    button.setAttribute("aria-controls", details.id);
-    button.setAttribute("aria-expanded", "false");
-    button.addEventListener("click", () => {
-      const opening = details.hidden;
-      for (const openButton of list.querySelectorAll('[aria-expanded="true"]')) {
-        openButton.setAttribute("aria-expanded", "false");
-        openButton.nextElementSibling.hidden = true;
-      }
-      if (opening) {
-        document.querySelector("#resume-feedback-result").replaceChildren();
-        showResumeFeedback(details, entry);
-        details.hidden = false;
-        button.setAttribute("aria-expanded", "true");
-      }
-    });
-    row.append(button, details);
-    list.append(row);
-  });
-}
-
-function showResumeFeedback(output, result, accountId) {
-  output.innerHTML = `<h2>Feedback for ${e(result.resumeName)}</h2>
-    ${result.targetRole ? `<p class="hint">Target role: ${e(result.targetRole)}</p>` : ""}
-    ${formatResumeFeedback(result.feedback)}`;
-  if (!accountId) return;
-  const button = document.createElement("button");
-  button.type = "button";
-  button.className = "btn btn-secondary";
-  button.textContent = "Save feedback";
-  button.addEventListener("click", () => {
-    if (user()?.id !== accountId) return;
-    try {
-      const key = "careerconnect:resume-feedback:" + accountId;
-      const entries = readSavedResumeFeedback(key);
-      localStorage.setItem(key, JSON.stringify([result, ...entries]));
-      output.replaceChildren();
-      renderSavedResumeFeedback();
-      toast("Feedback saved.");
-    } catch {
-      toast("Could not save feedback in this browser.");
-    }
-  });
-  output.append(button);
-}
-
-function formatResumeFeedback(feedback) {
-  const emphasize = text => e(text).replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
-  const blocks = [];
-  let bullets = [];
-  function finishList() {
-    if (!bullets.length) return;
-    blocks.push(`<ul>${bullets.join("")}</ul>`);
-    bullets = [];
-  }
-  for (const line of feedback.split(/\r?\n/)) {
-    const text = line.trim();
-    const item = text.match(/^[-*]\s+(.+)$/);
-    if (item) {
-      bullets.push(`<li>${emphasize(item[1])}</li>`);
-      continue;
-    }
-    finishList();
-    const heading = text.match(/^#{1,6}\s+(.+)$/);
-    if (heading) blocks.push(`<h3>${emphasize(heading[1])}</h3>`);
-    else if (text) blocks.push(`<p>${emphasize(text)}</p>`);
-  }
-  finishList();
-  return blocks.join("");
-}
-
 function renderSaved() {
   const jobs = db.jobs.filter((job) => user().saved.includes(job.id));
   shell(
@@ -613,19 +600,6 @@ async function loadApplications() {
     ));
   }
 }
-function savedApplicationAdviceKey() {
-  return "careerconnect:application-advice:" + user().id;
-}
-
-function renderSavedApplicationAdvice() {
-  const panel = document.querySelector("#saved-application-advice");
-  if (!panel) return;
-  const entries = readSavedResumeFeedback(savedApplicationAdviceKey());
-  panel.innerHTML = `<h2>Saved Advices</h2>${entries.length ? entries.map(entry => `
-    <h3 class="saved-advice"><button type="button" class="btn btn-secondary" data-action="open-saved-advice" data-id="${e(entry.applicationId)}">${e(entry.title)}</button></h3>
-  `).join("") : '<p class="hint">No saved advice yet.</p>'}`;
-}
-
 function renderApplications() {
   const summary = applicationSummary(db.applications, user().id);
   const all = summary.applications;
@@ -638,7 +612,7 @@ function renderApplications() {
     `<div class="page-title"><div><div class="eyebrow">Every step forward</div><h1>My applications</h1><p>Your search, with a little more perspective.</p></div><a class="btn btn-secondary" href="#jobs">Find more jobs ${icon("arrow")}</a></div><div class="stats application-stats" aria-label="Application summary" aria-live="polite"><div class="stat"><strong>${summary.total}</strong><span>Total applications</span></div>${statuses.map((status) => `<div class="stat"><strong>${summary.counts[status]}</strong><span>${status}</span></div>`).join("")}</div><div class="profile-layout"><section><div class="toolbar"><h2>Application history</h2><select id="application-filter" aria-label="Filter applications by status">${["All", ...statuses].map((status) => `<option ${applicationFilter === status ? "selected" : ""}>${status}</option>`).join("")}</select></div>${shown
       .map((app) => {
         const job = db.jobs.find((j) => j.id === app.jobId);
-        return `<article class="application">${logo(job)}<div class="grow"><h3><a href="#job/${job.id}">${e(job.title)}</a></h3><p>${e(job.company)} · Applied ${date(app.createdAt)}</p><div class="history">${app.history.map((item) => `${e(item.status)} · ${date(item.date)}`).join(" → ")}</div><button type="button" class="btn btn-secondary" data-action="application-notes" data-id="${e(app.id)}" style="margin-top:12px">My private notes</button><div class="form-actions"><button type="button" class="btn btn-primary" data-action="application-advice" data-id="${e(app.id)}">Get next-step advice ${icon("arrow")}</button></div><div class="resume-feedback-result" data-application-advice aria-live="polite"></div></div>${badge(app.status)}</article>`;
+        return `<article class="application">${logo(job)}<div class="grow"><h3><a href="#job/${job.id}">${e(job.title)}</a></h3><p>${e(job.company)} · Applied ${date(app.createdAt)}</p><div class="history">${app.history.map((item) => `${e(item.status)} · ${date(item.date)}`).join(" → ")}</div><button type="button" class="btn btn-secondary" data-action="application-notes" data-id="${e(app.id)}" style="margin-top:12px">My private notes</button></div>${badge(app.status)}</article>`;
       })
       .join("") ||
     empty(
@@ -649,9 +623,8 @@ function renderApplications() {
         ? "Choose another status to see your applications."
         : "Find a role you like and send your first application.",
     )
-    } </section><aside class="panel"><h2>On your radar</h2>${deadlineList(db.jobs.filter((job) => user().saved.includes(job.id) && !all.some((app) => app.jobId === job.id)))}<section id="saved-application-advice"></section></aside></div>`,
+    } </section><aside class="panel"><h2>On your radar</h2>${deadlineList(db.jobs.filter((job) => user().saved.includes(job.id) && !all.some((app) => app.jobId === job.id)))}</aside></div>`,
   );
-  renderSavedApplicationAdvice();
 }
 async function openApplicationNotes(applicationId) {
   const app = db.applications.find(
@@ -818,14 +791,7 @@ function clearResumePreview() {
   resumePreviewUrl = null;
   modal.classList.remove("resume-preview-modal");
 }
-modal.addEventListener("click", (event) => {
-  if (event.target !== modal || !modal.classList.contains("saved-advice-modal")) return;
-  const bounds = modal.getBoundingClientRect();
-  if (event.clientX < bounds.left || event.clientX > bounds.right ||
-      event.clientY < bounds.top || event.clientY > bounds.bottom) modal.close();
-});
 modal.addEventListener("close", () => {
-  modal.classList.remove("saved-advice-modal");
   // A queued close event must not clear a newly opened dialog.
   if (!modal.open) clearResumePreview();
 });
@@ -1085,21 +1051,28 @@ async function handleSubmit(form) {
     toast("Resume replaced.");
   } else if (form.id === "resume-feedback-form") {
     if (user()?.role !== "seeker") throw new Error("Resume feedback is available to job seekers.");
-    const accountId = user().id;
-    const output = form.nextElementSibling;
-    const openFeedback = document.querySelector('#saved-resume-feedback [aria-expanded="true"]');
-    if (openFeedback) openFeedback.click();
-    output.textContent = "Reviewing your resume…";
+    const apiBasePath = window.CareerConnectConfig?.apiBasePath || "/api";
+    let response;
     try {
-      const result = await requestData("/resume-feedback", {
-        resumeId: values.resumeId,
-        targetRole: values.targetRole.trim(),
+      response = await fetch(`${apiBasePath}/resume-feedback`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ resumeText: values.resumeText, targetRole: values.targetRole }),
       });
-      if (user()?.id === accountId) showResumeFeedback(output, result, accountId);
     } catch {
-      output.textContent = "";
-      throw new Error("Could not get resume feedback. Please try again.");
+      throw new Error("Resume feedback is temporarily unavailable. Please try again later.");
     }
+    let result;
+    try {
+      result = await response.json();
+    } catch {
+      throw new Error("Resume feedback returned an unexpected response. Please try again later.");
+    }
+    if (!response.ok) throw new Error(result.message || "Resume feedback is temporarily unavailable. Please try again later.");
+    const output = form.parentElement.querySelector("#resume-feedback-result");
+    output.textContent = result.feedback;
+    output.hidden = false;
+    toast("Your resume feedback is ready.");
   } else if (form.id === "job-form") {
     if (user()?.role !== "recruiter") return;
     for (const key of [
@@ -1258,51 +1231,6 @@ document.addEventListener("click", async (event) => {
   const button = event.target.closest("[data-action]");
   if (!button) return;
   const { action, id } = button.dataset;
-  if (action === "open-saved-advice") {
-    if (user()?.role !== "seeker") return;
-    const entry = readSavedResumeFeedback(savedApplicationAdviceKey()).find(item => item.applicationId === id);
-    if (!entry) return;
-    openModal(`<p class="eyebrow">Saved advice</p><h2 id="modal-title">${e(entry.title)}</h2>
-      <div class="resume-feedback-result">${formatResumeFeedback(entry.advice)}</div>`);
-    modal.classList.add("saved-advice-modal");
-    return;
-  }
-  if (action === "application-advice") {
-    if (button.disabled) return;
-    const output = button.closest(".application").querySelector("[data-application-advice]");
-    const accountId = user().id;
-    const title = button.closest(".application").querySelector("h3").textContent;
-    button.disabled = true;
-    output.textContent = "Preparing next-step advice…";
-    try {
-      const { advice } = await requestData("/application-advice", { applicationId: id });
-      if (!output.isConnected || user()?.id !== accountId) return;
-      output.innerHTML = formatResumeFeedback(advice);
-      const save = document.createElement("button");
-      save.type = "button";
-      save.className = "btn btn-secondary";
-      save.textContent = "Save advice";
-      save.addEventListener("click", () => {
-        if (user()?.id !== accountId) return;
-        try {
-          const key = savedApplicationAdviceKey();
-          const entries = readSavedResumeFeedback(key).filter(entry => entry.applicationId !== id);
-          localStorage.setItem(key, JSON.stringify([{ applicationId: id, title, advice }, ...entries]));
-          renderSavedApplicationAdvice();
-          save.textContent = "Advice saved";
-          save.disabled = true;
-        } catch {
-          toast("Could not save advice in this browser.");
-        }
-      });
-      output.append(save);
-    } catch {
-      output.textContent = "Could not get next-step advice. Please try again later.";
-    } finally {
-      button.disabled = false;
-    }
-    return;
-  }
   try {
     if (action === "application-notes") {
       if (modal.open) modal.close();
@@ -1335,6 +1263,44 @@ document.addEventListener("click", async (event) => {
       await refreshData();
       navigate("login");
       toast("You’re logged out.");
+
+    } else if (action === "view-notification-application") {
+      if (user()?.role !== "recruiter") {
+        throw new Error("Recruiter access required.");
+      }
+
+      // Refresh the data to get the latest application.
+      await refreshData();
+
+      const application = db.applications.find(
+        item => item.id === id
+      );
+
+      // Ensure the recruiter owns the related job posting.
+      if (!recruiterOwnsApplication(
+        application,
+        db.jobs,
+        user()?.id
+      )) {
+        throw new Error(
+          "This application is no longer available to your account."
+        );
+      }
+
+      // Clear filters and open the related application.
+      candidateFilters = { status: "All", date: "" };
+
+      navigate("candidates/" + application.jobId);
+
+      reviewModal(id);
+
+    } else if (action === "read-notification") {
+      const response = await fetch('/api/notifications', {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id })
+      });
+      if (!response.ok) throw new Error((await response.json()).message || 'Could not mark notification read.');
+      await renderNotifications();
     } else if (action === "reload-applications") {
       if (user()?.role === "seeker") await loadApplications();
     } else if (action === "edit-profile") {
