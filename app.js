@@ -184,15 +184,18 @@ let applicationFilter = "All";
 let candidateFilters = { status: "All", date: "" };
 let applicationNotes = {};
 
-function applicationStatusSections() {
+function applicationStatusSections(items = []) {
   const own = applicationSummary(db.applications, user().id).applications;
+  const seen = seenNotifications(user().id + ":application-submenus");
   return `<section class="panel notification-statuses" aria-label="Applications by status">
     <h2>Applications by status</h2>
     ${statuses.map(status => {
       const entries = own.filter(application => application.status === status)
         .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-      return `<details>
-        <summary><strong>${e(status)} (${entries.length})</strong></summary>
+      const updates = items.filter(item => !item.readAt && !seen.has(item.id)
+        && entries.some(application => application.id === item.applicationId));
+      return `<details data-application-updates="${e(JSON.stringify(updates.map(item => item.id)))}" data-account-id="${e(user().id)}">
+        <summary><strong>${e(status)} (${entries.length})</strong>${updates.length ? '<span class="application-update-dot" role="img" aria-label="Unread application updates"></span>' : ""}</summary>
         ${entries.length ? entries.map(application => {
           const job = db.jobs.find(item => item.id === application.jobId);
           return `<div class="application">
@@ -322,7 +325,7 @@ async function renderNotifications() {
             </article>
           `).join("")
         : "<p>No notifications yet.</p>"}
-      </section>` : applicationStatusSections()}
+      </section>` : applicationStatusSections(items)}
     `);
 
   } catch (error) {
@@ -338,6 +341,21 @@ async function renderNotifications() {
 }
 
 const seenNotificationIds = new Map();
+
+// Opening the notifications page clears the bell, but each submenu stays marked
+// until it is opened. Keep that history separate and scoped to the account.
+document.addEventListener("toggle", event => {
+  const section = event.target;
+  if (!section.matches?.("details[data-application-updates]") || !section.open
+      || section.dataset.accountId !== user()?.id) return;
+  const key = section.dataset.accountId + ":application-submenus";
+  const seen = seenNotifications(key);
+  for (const id of JSON.parse(section.dataset.applicationUpdates)) seen.add(id);
+  try {
+    localStorage.setItem(notificationHistoryKey(key), JSON.stringify([...seen]));
+  } catch { /* Retain the in-memory history if storage is unavailable. */ }
+  section.querySelector(".application-update-dot")?.remove();
+}, true);
 
 function notificationHistoryKey(accountId) {
   return "careerconnect:seen-notifications:" + accountId;

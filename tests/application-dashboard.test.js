@@ -95,6 +95,7 @@ function dashboardFixture() {
     close: () => { closed += 1; },
   };
   const scope = vm.createContext({
+    seenNotifications: () => new Set(),
     db: { applications, jobs }, user: () => person, applicationFilter: "All",
     shell: html => { views.page = html; },
     openModal: html => { views.modal = html; }, modal,
@@ -137,7 +138,7 @@ test("status cards filter only history and Total applications resets it", () => 
 test("expandable sections group only the seeker's applications and link to the submission", () => {
   const { scope } = dashboardFixture();
   const html = scope.applicationStatusSections();
-  assert.match(html, /<details>\s*<summary><strong>Offered \(1\)<\/strong>[\s\S]*?Design intern[\s\S]*?data-action="view-submitted-application" data-id="offered"/);
+  assert.match(html, /<details[^>]*>\s*<summary><strong>Offered \(1\)<\/strong>[\s\S]*?Design intern[\s\S]*?data-action="view-submitted-application" data-id="offered"/);
   assert.match(html, /Rejected \(1\)[\s\S]*?QA tester/);
   assert.match(html, /Interview \(0\)/);
   assert.doesNotMatch(html, /Private posting/);
@@ -156,4 +157,59 @@ test("submission popup shows original details only for its owner and dismisses o
   assert.equal(closed(), 0);
   listeners.click({ target: modal, clientX: 5, clientY: 50 });
   assert.equal(closed(), 1);
+});
+
+
+test("submenu dots flag only unseen updates for applications in that group", () => {
+  const { scope } = dashboardFixture();
+  const items = [
+    { id: "new-offer", applicationId: "offered" },
+    { id: "already-read", applicationId: "rejected", readAt: "2026-01-01" },
+    { id: "other-user", applicationId: "private" },
+  ];
+  const html = scope.applicationStatusSections(items);
+  assert.equal((html.match(/class="application-update-dot"/g) || []).length, 1);
+  assert.match(html, /Offered \(1\)<\/strong><span class="application-update-dot"/);
+  scope.seenNotifications = () => new Set(["new-offer"]);
+  assert.doesNotMatch(scope.applicationStatusSections(items), /class="application-update-dot"/);
+});
+
+test("opening a submenu removes its dot and remembers only that submenu's updates", () => {
+  const storage = new Map();
+  const code = source.slice(source.indexOf("const seenNotificationIds"), source.indexOf('document.addEventListener("click", event =>'));
+  function loadPage() {
+    let onToggle;
+    const scope = vm.createContext({
+      user: () => ({ id: "seeker-1" }),
+      document: { addEventListener(type, handler, capture) {
+        assert.equal(type, "toggle");
+        assert.equal(capture, true); // details toggle events do not bubble.
+        onToggle = handler;
+      } },
+      localStorage: {
+        getItem: key => storage.get(key) || null,
+        setItem: (key, value) => storage.set(key, value),
+      },
+    });
+    vm.runInContext(code, scope);
+    return { scope, toggle: section => onToggle({ target: section }) };
+  }
+  const page = loadPage();
+  let removed = false;
+  const section = {
+    open: false,
+    matches: selector => selector === "details[data-application-updates]",
+    dataset: { accountId: "seeker-1", applicationUpdates: '["offer-update"]' },
+    querySelector: () => ({ remove() { removed = true; } }),
+  };
+  page.toggle(section);
+  assert.equal(removed, false);
+  section.open = true;
+  page.toggle(section);
+  assert.equal(removed, true);
+  const seen = page.scope.seenNotifications("seeker-1:application-submenus");
+  assert.equal(seen.has("offer-update"), true);
+  assert.equal(seen.has("interview-update"), false);
+  assert.equal(loadPage().scope.seenNotifications("seeker-1:application-submenus").has("offer-update"), true);
+  assert.equal(loadPage().scope.seenNotifications("seeker-2:application-submenus").has("offer-update"), false);
 });

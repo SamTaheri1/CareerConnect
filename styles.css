@@ -1495,6 +1495,15 @@ dialog.saved-advice-modal {
 .notification-statuses { margin-bottom: 1.25rem; }
 .notification-statuses details { border-top: 1px solid #dce6df; }
 .notification-statuses summary { padding: 0.75rem 0; cursor: pointer; }
+.application-update-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-left: 8px;
+  border-radius: 50%;
+  background: #b83636;
+  vertical-align: middle;
+}
 .notification-statuses .application { flex-wrap: wrap; margin-bottom: 0.75rem; }
 
 .application-status-card {
