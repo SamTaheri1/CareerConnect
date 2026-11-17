@@ -740,44 +740,13 @@ function renderResumeFeedback() {
 
 function renderSavedResumeFeedback() {
   const list = document.querySelector("#saved-resume-feedback");
-  const key = "careerconnect:resume-feedback:" + user().id;
-  const entries = readSavedAdvice(key);
-  list.replaceChildren();
-  if (!entries.length) return;
-  const heading = document.createElement("h2");
-  heading.textContent = "Saved feedback";
-  list.append(heading);
-  entries.forEach((entry, index) => {
-    const row = document.createElement("div");
-    row.className = "saved-feedback-entry";
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "btn btn-secondary";
-    button.textContent = entry.targetRole || entry.resumeName;
-    button.title = entry.resumeName;
-
-    const details = document.createElement("div");
-    details.id = "saved-feedback-" + index;
-    details.className = "resume-feedback-result";
-    details.hidden = true;
-    button.setAttribute("aria-controls", details.id);
-    button.setAttribute("aria-expanded", "false");
-    button.addEventListener("click", () => {
-      const opening = details.hidden;
-      for (const openButton of list.querySelectorAll('[aria-expanded="true"]')) {
-        openButton.setAttribute("aria-expanded", "false");
-        openButton.nextElementSibling.hidden = true;
-      }
-      if (opening) {
-        document.querySelector("#resume-feedback-result").replaceChildren();
-        showResumeFeedback(details, entry);
-        details.hidden = false;
-        button.setAttribute("aria-expanded", "true");
-      }
-    });
-    row.append(button, details);
-    list.append(row);
-  });
+  if (!list) return;
+  const entries = readSavedAdvice("careerconnect:resume-feedback:" + user().id);
+  list.innerHTML = `<h2>Saved feedback</h2>${entries.length ? entries.map((entry, index) => `
+    <h3 class="saved-advice">
+      <button type="button" class="btn btn-secondary" data-action="open-saved-feedback" data-id="${index}" title="${e(entry.resumeName)}">${e(entry.targetRole || entry.resumeName)}</button>
+      <button type="button" class="save-btn saved" data-action="unsave-feedback" data-id="${index}" aria-label="Unsave feedback for ${e(entry.targetRole || entry.resumeName)}" aria-pressed="true">${icon("bookmark")}</button>
+    </h3>`).join("") : '<p class="hint">No saved feedback yet.</p>'}`;
 }
 
 function showResumeFeedback(output, result, accountId) {
@@ -794,7 +763,7 @@ function showResumeFeedback(output, result, accountId) {
     try {
       const key = "careerconnect:resume-feedback:" + accountId;
       const entries = readSavedAdvice(key);
-      localStorage.setItem(key, JSON.stringify([result, ...entries]));
+      localStorage.setItem(key, JSON.stringify([{ ...result, id: uid() }, ...entries.filter(entry => entry.resumeName !== result.resumeName || entry.targetRole !== result.targetRole)]));
       output.replaceChildren();
       renderSavedResumeFeedback();
       toast("Feedback saved.");
@@ -1531,6 +1500,29 @@ document.addEventListener("click", async (event) => {
   const button = event.target.closest("[data-action]");
   if (!button) return;
   const { action, id } = button.dataset;
+  if (action === "open-saved-feedback" || action === "unsave-feedback") {
+    if (user()?.role !== "seeker") return;
+    const key = "careerconnect:resume-feedback:" + user().id;
+    const entries = readSavedAdvice(key);
+    const index = Number(id);
+    const entry = entries[index];
+    if (!entry || !Number.isInteger(index)) return;
+    if (action === "open-saved-feedback") {
+      openModal(`<p class="eyebrow">Saved feedback</p><h2 id="modal-title">${e(entry.targetRole || entry.resumeName)}</h2>
+        <p>${e(entry.resumeName)}</p><div class="resume-feedback-result">${formatApplicationAdvice(entry.feedback)}</div>`);
+      modal.classList.add("saved-advice-modal");
+    } else {
+      try {
+        localStorage.setItem(key, JSON.stringify(entries.filter((item, position) => position !== index)));
+        renderSavedResumeFeedback();
+        toast("Feedback removed from saved.");
+      } catch {
+        toast("Could not unsave feedback in this browser.");
+      }
+    }
+    return;
+  }
+
   if (action === "filter-application-status") {
     applicationFilter = id;
     renderApplications();
