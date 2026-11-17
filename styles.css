@@ -1438,13 +1438,23 @@ dialog h2 {
   border-top: 1px solid #dce6df;
 }
 .saved-advice {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 0.5rem;
   margin-top: 0.75rem;
 }
-.saved-advice button {
-  white-space: normal;
-  overflow-wrap: anywhere;
+.saved-advice > .btn {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   text-align: left;
   font-weight: 700;
+}
+.saved-advice > .save-btn {
+  flex: 0 0 auto;
 }
 dialog.saved-advice-modal {
   width: min(42rem, calc(100% - 2rem));

@@ -447,7 +447,7 @@ function header(route) {
   void refreshNotificationBell();
 }
 function shell(content) {
-  main.innerHTML = `<div class="page">${content}</div>`;
+  main.innerHTML = `<div class="page page-enter">${content}</div>`;
 }
 function navigate(route) {
   if (location.hash === `#${route}`) render();
@@ -788,7 +788,7 @@ function renderSavedApplicationAdvice() {
   if (!panel) return;
   const entries = readSavedAdvice(savedApplicationAdviceKey());
   panel.innerHTML = `<h2>Saved Advices</h2>${entries.length ? entries.map(entry => `
-    <h3 class="saved-advice"><button type="button" class="btn btn-secondary" data-action="open-saved-advice" data-id="${e(entry.applicationId)}">${e(entry.title)}</button></h3>
+    <h3 class="saved-advice"><button type="button" class="btn btn-secondary" data-action="open-saved-advice" data-id="${e(entry.applicationId)}">${e(entry.title)}</button> <button type="button" class="save-btn saved" data-action="unsave-advice" data-id="${e(entry.applicationId)}" aria-label="Unsave advice for ${e(entry.title)}" aria-pressed="true">${icon("bookmark")}</button></h3>
   `).join("") : '<p class="hint">No saved advice yet.</p>'}`;
 }
 
@@ -1450,6 +1450,25 @@ document.addEventListener("click", async (event) => {
     document.querySelector('.application-status-card[aria-pressed="true"]')?.focus();
     return;
   }
+  if (action === "unsave-advice") {
+    if (user()?.role !== "seeker") return;
+    try {
+      const key = savedApplicationAdviceKey();
+      localStorage.setItem(key, JSON.stringify(readSavedAdvice(key).filter(entry => entry.applicationId !== id)));
+      renderSavedApplicationAdvice();
+      const card = [...document.querySelectorAll('[data-action="application-advice"]')].find(item => item.dataset.id === id)?.closest(".application");
+      const save = card?.querySelector("[data-advice-save]");
+      if (save) {
+        save.dataset.saved = "false";
+        save.textContent = "Save advice";
+        save.setAttribute("aria-pressed", "false");
+      }
+      toast("Advice removed from saved.");
+    } catch {
+      toast("Could not unsave advice in this browser.");
+    }
+    return;
+  }
   if (action === "open-saved-advice") {
     if (user()?.role !== "seeker") return;
     const entry = readSavedAdvice(savedApplicationAdviceKey()).find(item => item.applicationId === id);
@@ -1473,16 +1492,22 @@ document.addEventListener("click", async (event) => {
       const save = document.createElement("button");
       save.type = "button";
       save.className = "btn btn-secondary";
+      save.dataset.adviceSave = "";
+      save.dataset.saved = "false";
+      save.setAttribute("aria-pressed", "false");
       save.textContent = "Save advice";
       save.addEventListener("click", () => {
         if (user()?.id !== accountId) return;
         try {
           const key = savedApplicationAdviceKey();
           const entries = readSavedAdvice(key).filter(entry => entry.applicationId !== id);
-          localStorage.setItem(key, JSON.stringify([{ applicationId: id, title, advice }, ...entries]));
+          const removing = save.dataset.saved === "true";
+          localStorage.setItem(key, JSON.stringify(removing ? entries : [{ applicationId: id, title, advice }, ...entries]));
           renderSavedApplicationAdvice();
-          save.textContent = "Advice saved";
-          save.disabled = true;
+          save.dataset.saved = String(!removing);
+          save.textContent = removing ? "Save advice" : "Unsave advice";
+          save.setAttribute("aria-pressed", String(!removing));
+          toast(removing ? "Advice removed from saved." : "Advice saved.");
         } catch {
           toast("Could not save advice in this browser.");
         }
