@@ -1,5 +1,34 @@
 # Verification
 
+## Sprint 3 automated coverage (November 19, 2026)
+
+Run `npm test` with Node.js 24 or later. The suite uses mocked AI providers and isolated PGlite databases; it does not call live OpenAI or modify the shared Supabase database. API integration tests start temporary localhost servers and require loopback connections to be permitted.
+
+Local validation on November 19, 2026: `npm test` passed **116/116 tests**, with zero failures, skips or cancellations (about 68 seconds). This adds 28 tests to the previous 88: 26 isolated unit tests and two database integration tests. Syntax checks passed for `app.js`, `server.js`, `database.js` and `ai/resume-feedback.js`; `git diff --check` passed. No production code changes were needed.
+
+| Requirement | Automated evidence | Test level |
+| --- | --- | --- |
+| Recruiter posting creation, editing, required fields, salary/deadline validation, permissions, close/reopen | `posting-workflows.test.js`; `posting-persistence.test.js` adds persisted validation, ownership and atomic rejection checks | Isolated frontend unit tests plus database integration |
+| Archive/restore postings and filter applications | `recruiter-applications.test.js` | Frontend unit |
+| Candidate review and status updates | `posting-workflows.test.js` checks escaped candidate details, ownership, supported statuses, dated history and unchanged-status behavior; `database.test.js` checks backend authorization and resume access | Frontend unit plus API/database integration |
+| Application analytics and history | `application-dashboard.test.js` covers totals, empty state, account isolation, weekly boundaries, filtering and original submission details | Frontend unit |
+| Notifications and reminders | `notification-boundaries.test.js` covers exact seven-day/expiry boundaries with a mocked clock, non-interview statuses, unchanged status, invalid-status rejection, deadline changes, recipient deduplication and closed/archived jobs; `notifications.test.js` covers new applications, interviews, reminder deduplication and privacy; `saved-ai-feedback.test.js` covers notification bell state | Unit plus database integration |
+| AI resume feedback | `resume-feedback-unit.test.js` covers response parsing, target-role validation, file limits/types, ownership-error propagation, DOCX requests, timeout signal and simulated network/timeout errors; `registration.test.js` covers API success, provider errors, invalid/incomplete responses and rate limits; `saved-ai-feedback.test.js` covers saved results | Handler/frontend unit plus mocked-provider API integration |
+| Additional application advice and private notes | `application-advice.test.js`; `application-notes.test.js`; `saved-ai-feedback.test.js` | Handler/frontend unit plus database integration |
+
+The added files complement existing coverage rather than reproducing the existing success/error API scenarios. Frontend unit tests execute production functions in a VM with stubbed UI/persistence dependencies, following the repository's existing convention. Reminder boundary unit tests mock SQL access; real-database tests separately verify recipient selection and persistence. Database-backed tests are integration tests, not isolated unit tests.
+
+### CI inclusion
+
+`.github/workflows/main.yml` runs `npm ci` and `npm test` on pushes and pull requests using Node.js 24. The test script discovers `tests/*.test.js`, including all four newly added files. No CI configuration change is necessary. A remote GitHub Actions run has not been verified as part of this local change.
+
+### Remaining verification limits
+
+- This automated suite does not replace the PDF's separate requirement for at least one acceptance test per Sprint 3 user story. Verify each story's acceptance steps and recorded results in the project artifacts; contribution-log completion labels alone are not execution evidence.
+- Real-browser workflows, accessibility and responsive layouts still require the manual checks below. VM tests do not exercise native browser form validation or rendering.
+- Live AI quality and real PDF interpretation are not evaluated by mocked-provider tests. Validate those separately for the demonstration. The timeout unit case simulates a provider timeout and verifies an abort signal is supplied; it does not wait for a real network timeout.
+- No code-coverage percentage or exhaustive branch-coverage claim is made.
+
 ## Executed checks
 
 Browser checks were run in a fresh automated Microsoft Edge context on September 25, 2026, using an external test harness. No testing library is needed to run the website.
