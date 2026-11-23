@@ -101,7 +101,7 @@ function dashboardFixture() {
     openModal: html => { views.modal = html; }, modal,
     date: String, badge: String, empty: title => title,
     icon: () => "", logo: () => "", deadlineList: () => "",
-    renderSavedApplicationAdvice() {},
+    renderSavedApplicationAdvice() {}, restoreAiProgress() {},
     document: { querySelector: () => null },
   });
   function readBetween(start, end) {

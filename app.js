@@ -736,6 +736,94 @@ function renderResumeFeedback() {
     </section>
   `);
   renderSavedResumeFeedback();
+  restoreAiProgress();
+}
+
+const aiRequests = new Map();
+
+function aiRequestKey(accountId, kind, id) {
+  return JSON.stringify([accountId, kind, id]);
+}
+
+async function generateAiResult(kind, id, input, title = "") {
+  const accountId = user().id;
+  const key = aiRequestKey(accountId, kind, id);
+  if (aiRequests.get(key)?.pending) return aiRequests.get(key).promise;
+  const state = { pending: true, input, title, result: null, error: "" };
+  aiRequests.set(key, state);
+  state.promise = (async () => {
+    try {
+      state.result = await requestData(kind === "resume" ? "/resume-feedback" : "/application-advice", input);
+    } catch {
+      state.error = kind === "resume"
+        ? "Could not get resume feedback. Please try again."
+        : "Could not get next-step advice. Please try again later.";
+    } finally {
+      state.pending = false;
+      if (user()?.id === accountId) {
+        restoreAiProgress();
+        toast(state.error || (kind === "resume" ? "Resume feedback is ready." : "Next-step advice is ready."));
+      }
+    }
+  })();
+  restoreAiProgress();
+  return state.promise;
+}
+
+function restoreAiProgress() {
+  const accountId = user()?.id;
+  if (!accountId) return;
+  const resumeState = aiRequests.get(aiRequestKey(accountId, "resume", "current"));
+  const form = document.querySelector("#resume-feedback-form");
+  if (form && resumeState) {
+    form.elements.resumeId.value = resumeState.input.resumeId;
+    form.elements.targetRole.value = resumeState.input.targetRole;
+    form.querySelector("button").disabled = resumeState.pending;
+    const output = document.querySelector("#resume-feedback-result");
+    output.setAttribute("aria-busy", String(resumeState.pending));
+    if (resumeState.pending) output.textContent = "Reviewing your resume… You can switch pages while it finishes.";
+    else if (resumeState.error) output.textContent = resumeState.error;
+    else if (resumeState.result) showResumeFeedback(output, resumeState.result, accountId);
+  }
+  for (const button of document.querySelectorAll('[data-action="application-advice"]')) {
+    const id = button.dataset.id;
+    const state = aiRequests.get(aiRequestKey(accountId, "advice", id));
+    if (!state) continue;
+    const output = button.closest(".application").querySelector("[data-application-advice]");
+    button.disabled = state.pending;
+    output.setAttribute("aria-busy", String(state.pending));
+    if (state.pending) output.textContent = "Preparing next-step advice… You can switch pages while it finishes.";
+    else if (state.error) output.textContent = state.error;
+    else if (state.result) showApplicationAdvice(output, state.result.advice, id, state.title, accountId);
+  }
+}
+
+function showApplicationAdvice(output, advice, id, title, accountId) {
+  output.innerHTML = formatApplicationAdvice(advice);
+  const save = document.createElement("button");
+  save.type = "button";
+  save.className = "btn btn-secondary";
+  save.dataset.adviceSave = "";
+  save.dataset.saved = "false";
+  save.setAttribute("aria-pressed", "false");
+  save.textContent = "Save advice";
+  save.addEventListener("click", () => {
+    if (user()?.id !== accountId) return;
+    try {
+      const key = savedApplicationAdviceKey();
+      const entries = readSavedAdvice(key).filter(entry => entry.applicationId !== id);
+      const removing = save.dataset.saved === "true";
+      localStorage.setItem(key, JSON.stringify(removing ? entries : [{ applicationId: id, title, advice }, ...entries]));
+      renderSavedApplicationAdvice();
+      save.dataset.saved = String(!removing);
+      save.textContent = removing ? "Save advice" : "Unsave advice";
+      save.setAttribute("aria-pressed", String(!removing));
+      toast(removing ? "Advice removed from saved." : "Advice saved.");
+    } catch {
+      toast("Could not save advice in this browser.");
+    }
+  });
+  output.append(save);
 }
 
 function renderSavedResumeFeedback() {
@@ -764,6 +852,7 @@ function showResumeFeedback(output, result, accountId) {
       const key = "careerconnect:resume-feedback:" + accountId;
       const entries = readSavedAdvice(key);
       localStorage.setItem(key, JSON.stringify([{ ...result, id: uid() }, ...entries.filter(entry => entry.resumeName !== result.resumeName || entry.targetRole !== result.targetRole)]));
+      aiRequests.delete(aiRequestKey(accountId, "resume", "current"));
       output.replaceChildren();
       renderSavedResumeFeedback();
       toast("Feedback saved.");
@@ -891,6 +980,7 @@ function renderApplications() {
     } </section><aside class="panel"><h2>On your radar</h2>${deadlineList(db.jobs.filter((job) => user().saved.includes(job.id) && !all.some((app) => app.jobId === job.id)))}<section id="saved-application-advice"></section></aside></div>`,
   );
   renderSavedApplicationAdvice();
+  restoreAiProgress();
 }
 async function openApplicationNotes(applicationId) {
   const app = db.applications.find(
@@ -1327,21 +1417,10 @@ async function handleSubmit(form) {
     toast("Resume replaced.");
   } else if (form.id === "resume-feedback-form") {
     if (user()?.role !== "seeker") throw new Error("Resume feedback is available to job seekers.");
-    const accountId = user().id;
-    const output = form.nextElementSibling;
-    const openFeedback = document.querySelector('#saved-resume-feedback [aria-expanded="true"]');
-    if (openFeedback) openFeedback.click();
-    output.textContent = "Reviewing your resume…";
-    try {
-      const result = await requestData("/resume-feedback", {
-        resumeId: values.resumeId,
-        targetRole: values.targetRole.trim(),
-      });
-      if (user()?.id === accountId) showResumeFeedback(output, result, accountId);
-    } catch {
-      output.textContent = "";
-      throw new Error("Could not get resume feedback. Please try again.");
-    }
+    await generateAiResult("resume", "current", {
+      resumeId: values.resumeId,
+      targetRole: values.targetRole.trim(),
+    });
   } else if (form.id === "job-form") {
     if (user()?.role !== "recruiter") return;
     for (const key of [
@@ -1558,47 +1637,12 @@ document.addEventListener("click", async (event) => {
     return;
   }
   if (action === "application-advice") {
-    if (button.disabled) return;
-    const output = button.closest(".application").querySelector("[data-application-advice]");
-    const accountId = user().id;
+    if (user()?.role !== "seeker" || button.disabled) return;
     const title = button.closest(".application").querySelector("h3").textContent;
-    button.disabled = true;
-    output.textContent = "Preparing next-step advice…";
-    try {
-      const { advice } = await requestData("/application-advice", { applicationId: id });
-      if (!output.isConnected || user()?.id !== accountId) return;
-      output.innerHTML = formatApplicationAdvice(advice);
-      const save = document.createElement("button");
-      save.type = "button";
-      save.className = "btn btn-secondary";
-      save.dataset.adviceSave = "";
-      save.dataset.saved = "false";
-      save.setAttribute("aria-pressed", "false");
-      save.textContent = "Save advice";
-      save.addEventListener("click", () => {
-        if (user()?.id !== accountId) return;
-        try {
-          const key = savedApplicationAdviceKey();
-          const entries = readSavedAdvice(key).filter(entry => entry.applicationId !== id);
-          const removing = save.dataset.saved === "true";
-          localStorage.setItem(key, JSON.stringify(removing ? entries : [{ applicationId: id, title, advice }, ...entries]));
-          renderSavedApplicationAdvice();
-          save.dataset.saved = String(!removing);
-          save.textContent = removing ? "Save advice" : "Unsave advice";
-          save.setAttribute("aria-pressed", String(!removing));
-          toast(removing ? "Advice removed from saved." : "Advice saved.");
-        } catch {
-          toast("Could not save advice in this browser.");
-        }
-      });
-      output.append(save);
-    } catch {
-      output.textContent = "Could not get next-step advice. Please try again later.";
-    } finally {
-      button.disabled = false;
-    }
+    await generateAiResult("advice", id, { applicationId: id }, title);
     return;
   }
+
   try {
     if (action === "application-notes") {
       if (modal.open) modal.close();
