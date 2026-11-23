@@ -1526,3 +1526,15 @@ dialog.saved-advice-modal {
   border-color: #16483d;
   background: #eef6f1;
 }
+
+.recruiter-messages {
+  margin-top: 1rem;
+}
+.recruiter-messages article {
+  margin-top: 0.75rem;
+  padding: 1rem;
+  border-left: 3px solid #16483d;
+  border-radius: 8px;
+  background: #eef6f1;
+  overflow-wrap: anywhere;
+}

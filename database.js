@@ -286,22 +286,23 @@ class Database {
         fail("Choose a valid application status.");
       }
 
-      if (old.status !== value.status) {
+      const recruiterMessage = text(value.recruiterMessage || "", "message to applicant", 2000);
+      if (old.status !== value.status || recruiterMessage) {
         const history = [
           ...JSON.parse(old.history),
-          { status: value.status, date: new Date().toISOString() }
+          { status: value.status, date: new Date().toISOString(), ...(recruiterMessage ? { message: recruiterMessage, recruiterName: person.name } : {}) }
         ];
 
         await this.sql.prepare(
           "UPDATE applications SET status = ?, history = ? WHERE id = ?"
         ).run(value.status, JSON.stringify(history), value.id);
 
-        const title = value.status === "Interview"
+        const title = old.status === value.status ? "Message from recruiter" : value.status === "Interview"
           ? "Interview status update"
           : "Application status updated";
 
         const message =
-          `Your application for ${job.title} changed to ${value.status}.`;
+          recruiterMessage || `Your application for ${job.title} changed to ${value.status}.`;
 
         await this.sql.prepare(`
         INSERT INTO notifications
@@ -381,24 +382,27 @@ class Database {
       JSON.stringify([{ status: "Applied", date: now }])
     );
 
-    // US23.1 and US23.2:
-    // Notify the recruiter who owns the job posting.
-    // The notification is saved in the same database transaction.
-    await this.sql.prepare(`
-    INSERT INTO notifications
-      (id, user_id, application_id, job_id,
-       kind, title, message, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-      randomBytes(16).toString("hex"),
-      job.owner_id,
-      value.id,
-      job.id,
-      "new_application",
-      "New job application received",
-      `A job seeker has applied to your posting "${job.title}".`,
-      now
-    );
+    // Sample listings have no recruiter account to notify.
+    if (job.owner_id) {
+      // US23.1 and US23.2:
+      // Notify the recruiter who owns the job posting.
+      // The notification is saved in the same database transaction.
+      await this.sql.prepare(`
+      INSERT INTO notifications
+        (id, user_id, application_id, job_id,
+         kind, title, message, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+        randomBytes(16).toString("hex"),
+        job.owner_id,
+        value.id,
+        job.id,
+        "new_application",
+        "New job application received",
+        `A job seeker has applied to your posting "${job.title}".`,
+        now
+      );
+    }
   }
  
   async applicationForAdvice(person, applicationId) {

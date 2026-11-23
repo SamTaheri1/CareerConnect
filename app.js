@@ -208,6 +208,18 @@ function applicationStatusSections(items = []) {
   </section>`;
 }
 
+function recruiterMessages(application) {
+  const messages = application.history.filter(item => item.message);
+  if (!messages.length) return "";
+  return `<section class="recruiter-messages" aria-label="Recruiter messages">
+    <h3>Messages from the recruiter</h3>
+    ${messages.slice().reverse().map(item => `<article>
+      <p><strong>${e(item.recruiterName || "Recruiter")}</strong> · ${e(item.status)} · ${date(item.date)}</p>
+      <p class="application-note">${e(item.message)}</p>
+    </article>`).join("")}
+  </section>`;
+}
+
 function showSubmittedApplication(id) {
   const person = user();
   const application = db.applications.find(item => item.id === id && item.userId === person?.id);
@@ -223,6 +235,7 @@ function showSubmittedApplication(id) {
     </dl>
     <h3>Note to the hiring team</h3>
     <p class="application-note">${e(application.note || "No note included.")}</p>
+    ${recruiterMessages(application)}
     <h3>Status history</h3>
     <ul>${application.history.map(item => `<li>${e(item.status)} · ${date(item.date)}</li>`).join("")}</ul>
     <div class="form-actions"><button type="button" class="btn btn-secondary" data-action="download-submitted-application" data-id="${e(id)}">Download submitted resume</button></div>`);
@@ -966,7 +979,7 @@ function renderApplications() {
     `<div class="page-title"><div><div class="eyebrow">Every step forward</div><h1>My applications</h1><p>Your search, with a little more perspective.</p></div><a class="btn btn-secondary" href="#jobs">Find more jobs ${icon("arrow")}</a></div><div class="stats application-stats" aria-label="Application summary" aria-live="polite">${filterCard("All", "Total applications", summary.total)}${statuses.map(status => filterCard(status, status, summary.counts[status])).join("")}</div>${weeklyActivity}<div class="profile-layout"><section><div class="toolbar"><h2>Application history</h2><select id="application-filter" aria-label="Filter applications by status">${["All", ...statuses].map((status) => `<option ${applicationFilter === status ? "selected" : ""}>${status}</option>`).join("")}</select></div>${shown
       .map((app) => {
         const job = db.jobs.find((j) => j.id === app.jobId);
-        return `<article class="application">${logo(job)}<div class="grow"><h3><a href="#job/${job.id}">${e(job.title)}</a></h3><p>${e(job.company)} · Applied ${date(app.createdAt)}</p><div class="history">${app.history.map((item) => `${e(item.status)} · ${date(item.date)}`).join(" → ")}</div><button type="button" class="btn btn-secondary" data-action="application-notes" data-id="${e(app.id)}" style="margin-top:12px">My private notes</button> <button type="button" class="btn btn-secondary" style="margin-top:12px" data-action="view-submitted-application" data-id="${e(app.id)}">View application</button><div class="form-actions"><button type="button" class="btn btn-primary" data-action="application-advice" data-id="${e(app.id)}">Get next-step advice ${icon("arrow")}</button></div><div class="resume-feedback-result" data-application-advice aria-live="polite"></div></div>${badge(app.status)}</article>`;
+        return `<article class="application">${logo(job)}<div class="grow"><h3><a href="#job/${job.id}">${e(job.title)}</a></h3><p>${e(job.company)} · Applied ${date(app.createdAt)}</p><div class="history">${app.history.map((item) => `${e(item.status)} · ${date(item.date)}`).join(" → ")}</div><button type="button" class="btn btn-secondary" data-action="application-notes" data-id="${e(app.id)}" style="margin-top:12px">My private notes</button> <button type="button" class="btn btn-secondary" style="margin-top:12px" data-action="view-submitted-application" data-id="${e(app.id)}">View application</button>${recruiterMessages(app)}<div class="form-actions"><button type="button" class="btn btn-primary" data-action="application-advice" data-id="${e(app.id)}">Get next-step advice ${icon("arrow")}</button></div><div class="resume-feedback-result" data-application-advice aria-live="polite"></div></div>${badge(app.status)}</article>`;
       })
       .join("") ||
     empty(
@@ -1205,7 +1218,7 @@ function reviewModal(id) {
   if (!recruiterOwnsApplication(app, db.jobs, user()?.id)) return;
   const job = db.jobs.find((job) => job.id === app.jobId);
   openModal(
-    `<div class="eyebrow">${e(job.title)}</div><h2 id="modal-title">${e(app.name)}</h2><p>${e(app.email)}</p>${app.profile?.headline ? `<h3>${e(app.profile.headline)}</h3>` : ""}${app.profile?.bio ? `<p class="application-note">${e(app.profile.bio)}</p>` : ""}${app.profile?.skills ? `<p class="small">Skills: ${e(app.profile.skills)}</p>` : ""}${app.profile?.location ? `<p class="small">${e(app.profile.location)}</p>` : ""}<button class="btn btn-secondary" data-action="download-application" data-id="${app.id}">${icon("file")} Download resume</button><h3 style="margin-top:24px">Candidate’s note</h3><p class="application-note">${e(app.note || "No note included.")}</p><form id="status-form" data-id="${id}">${selectField("Application status", "status", statuses, app.status)}<div class="history">${app.history.map((item) => `${e(item.status)} · ${date(item.date)}`).join("<br>")}</div><p id="form-error" class="error" role="alert"></p><div class="form-actions"><button class="btn btn-primary">Update status</button><button type="button" class="btn btn-secondary" data-action="close-modal">Close</button></div></form>`,
+    `<div class="eyebrow">${e(job.title)}</div><h2 id="modal-title">${e(app.name)}</h2><p>${e(app.email)}</p>${app.profile?.headline ? `<h3>${e(app.profile.headline)}</h3>` : ""}${app.profile?.bio ? `<p class="application-note">${e(app.profile.bio)}</p>` : ""}${app.profile?.skills ? `<p class="small">Skills: ${e(app.profile.skills)}</p>` : ""}${app.profile?.location ? `<p class="small">${e(app.profile.location)}</p>` : ""}<button class="btn btn-secondary" data-action="download-application" data-id="${app.id}">${icon("file")} Download resume</button><h3 style="margin-top:24px">Candidate’s note</h3><p class="application-note">${e(app.note || "No note included.")}</p><form id="status-form" data-id="${id}">${selectField("Application status", "status", statuses, app.status)}<label>Message to applicant <span class="hint">(optional)</span><textarea name="recruiterMessage" maxlength="2000" rows="4" placeholder="Share an update or explain the next steps."></textarea><span class="hint">This message will be visible to the applicant.</span></label>${recruiterMessages(app)}<div class="history">${app.history.map((item) => `${e(item.status)} · ${date(item.date)}`).join("<br>")}</div><p id="form-error" class="error" role="alert"></p><div class="form-actions"><button class="btn btn-primary">Update status</button><button type="button" class="btn btn-secondary" data-action="close-modal">Close</button></div></form>`,
   );
 }
 // Resume bytes and application copies are stored in SQLite on the server.
@@ -1533,7 +1546,9 @@ async function handleSubmit(form) {
       !statuses.includes(values.status)
     )
       throw new Error("You cannot update this application.");
-    if (app.status !== values.status) {
+    const recruiterMessage = (values.recruiterMessage || "").trim();
+    if (app.status !== values.status || recruiterMessage) {
+      app.recruiterMessage = recruiterMessage;
       app.status = values.status;
       app.history.push({
         status: values.status,
