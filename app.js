@@ -9,20 +9,31 @@ function applicationSummary(applications, userId) {
   return { applications: ownApplications, total: ownApplications.length, counts };
 }
 
-function weeklyApplicationCounts(applications, now = new Date()) {
-  const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  monday.setDate(monday.getDate() - (monday.getDay() + 6) % 7);
-  return [-3, -2, -1, 0].map(offset => {
-    const start = new Date(monday);
-    start.setDate(start.getDate() + offset * 7);
-    const end = new Date(start);
-    end.setDate(end.getDate() + 7);
-    const count = applications.filter(application => {
-      const submitted = new Date(application.createdAt);
-      return submitted >= start && submitted < end && submitted <= now;
-    }).length;
-    return { start, count };
+function applicationAnalytics(applications, userId, range = {}) {
+  const filtered = applications.filter(application => {
+    if (application.userId !== userId) return false;
+    if (!range.start && !range.end) return true;
+    const date = new Date(application.createdAt);
+    if (!Number.isFinite(date.getTime())) return false;
+    const day = [date.getFullYear(), String(date.getMonth() + 1).padStart(2, "0"),
+      String(date.getDate()).padStart(2, "0")].join("-");
+    return (!range.start || day >= range.start) && (!range.end || day <= range.end);
   });
+  const summary = applicationSummary(filtered, userId);
+  const days = new Map();
+  for (const application of filtered) {
+    const date = new Date(application.createdAt);
+    if (!Number.isFinite(date.getTime())) continue;
+    const day = [date.getFullYear(), String(date.getMonth() + 1).padStart(2, "0"),
+      String(date.getDate()).padStart(2, "0")].join("-");
+    days.set(day, (days.get(day) || 0) + 1);
+  }
+  let cumulative = 0;
+  const trend = [...days].sort(([a], [b]) => a.localeCompare(b)).map(([day, count]) => {
+    cumulative += count;
+    return { day, count, cumulative };
+  });
+  return { ...summary, trend };
 }
 
 function filterRecruiterApplications(applications, ownedJobIds, filters = {}) {
@@ -181,6 +192,8 @@ let filters = {
   sort: "newest",
 };
 let applicationFilter = "All";
+let applicationDateRange = { start: "", end: "" };
+let applicationChart = "bar";
 let candidateFilters = { status: "All", date: "" };
 let applicationNotes = {};
 
@@ -957,18 +970,61 @@ function renderSavedApplicationAdvice() {
   `).join("") : '<p class="hint">No saved advice yet.</p>'}`;
 }
 
+function renderApplicationChart(summary, type) {
+  const colors = ["#225c4b", "#709e86", "#d59b35", "#497ba4", "#b85d65"];
+  const legend = `<ul class="analytics-legend">${statuses.map((status, i) =>
+    `<li><span style="background:${colors[i]}" aria-hidden="true"></span>${e(status)} <strong>${summary.counts[status]}</strong></li>`).join("")}</ul>`;
+  if (!summary.total) return '<p class="hint" role="status">No applications in this date range.</p>';
+  if (type === "pie") {
+    let angle = 0;
+    const segments = statuses.map((status, i) => {
+      const start = angle;
+      angle += summary.counts[status] / summary.total * 360;
+      return `${colors[i]} ${start}deg ${angle}deg`;
+    });
+    return `<div class="analytics-pie-layout"><div class="analytics-pie" role="img" aria-label="Application status proportions" style="background:conic-gradient(${segments.join(",")})"></div>${legend}</div>`;
+  }
+  if (type === "line") {
+    if (!summary.trend.length) return '<p class="hint">No dated submissions to plot.</p>';
+    const first = Date.parse(summary.trend[0].day);
+    const last = Date.parse(summary.trend.at(-1).day);
+    const points = summary.trend.map(item => ({
+      ...item,
+      x: last === first ? 310 : 40 + (Date.parse(item.day) - first) / (last - first) * 540,
+      y: 190 - item.cumulative / summary.total * 150,
+    }));
+    return `<p class="hint">Cumulative submissions within the selected dates</p>
+      <svg class="analytics-line" viewBox="0 0 620 235" role="img" aria-label="Cumulative applications over time">
+        <path d="M40 25V190H590" fill="none" stroke="#a9bdb3"/>
+        <text x="8" y="40">${summary.total}</text><text x="20" y="194">0</text>
+        <polyline points="${points.map(p => `${p.x},${p.y}`).join(" ")}" fill="none" stroke="#225c4b" stroke-width="3"/>
+        ${points.map(p => `<circle cx="${p.x}" cy="${p.y}" r="4" fill="#225c4b"><title>${p.day}: ${p.cumulative} total, ${p.count} submitted</title></circle>`).join("")}
+        <text x="40" y="220">${summary.trend[0].day}</text><text x="580" y="220" text-anchor="end">${summary.trend.at(-1).day}</text>
+      </svg>
+      <details><summary>View submission data</summary><table class="analytics-table"><thead><tr><th>Date</th><th>Submitted</th><th>Cumulative</th></tr></thead><tbody>${summary.trend.map(p => `<tr><td>${p.day}</td><td>${p.count}</td><td>${p.cumulative}</td></tr>`).join("")}</tbody></table></details>`;
+  }
+  const maximum = Math.max(...Object.values(summary.counts), 1);
+  return `<div class="analytics-bars">${statuses.map((status, i) =>
+    `<div class="analytics-bar-row"><span>${e(status)}</span><div class="analytics-track"><div style="width:${summary.counts[status] / maximum * 100}%;background:${colors[i]}"></div></div><strong>${summary.counts[status]}</strong></div>`).join("")}</div>`;
+}
+
 function renderApplications() {
   const filterCard = (status, label, count) =>
     `<button type="button" class="stat application-status-card" data-action="filter-application-status" data-id="${e(status)}" aria-pressed="${applicationFilter === status}"><strong>${count}</strong><span>${e(label)}</span></button>`;
-  const summary = applicationSummary(db.applications, user().id);
-  const weeklyCounts = weeklyApplicationCounts(summary.applications);
-  const weekLabel = new Intl.DateTimeFormat("en-CA", { month: "short", day: "numeric" });
-  const weeklyActivity = `<section class="panel" aria-labelledby="weekly-activity-title">
-    <h2 id="weekly-activity-title">Applications submitted per week</h2>
-    <div class="stats application-stats">${weeklyCounts.map(({ start, count }) =>
-      `<div class="stat"><strong>${count}</strong><span>Week of ${weekLabel.format(start)}</span></div>`
-    ).join("")}</div>
+  const summary = applicationAnalytics(db.applications, user().id, applicationDateRange);
+  const analytics = `<section class="panel application-analytics">
+    <div class="toolbar"><h2>Application analytics</h2><div class="chart-options" role="group" aria-label="Chart type">
+      ${[["bar", "Bar chart"], ["line", "Line graph"], ["pie", "Pie chart"]].map(([type, label]) =>
+        `<button type="button" class="btn btn-secondary" data-action="application-chart" data-id="${type}" aria-pressed="${applicationChart === type}">${label}</button>`).join("")}
+    </div></div>${renderApplicationChart(summary, applicationChart)}
   </section>`;
+  const dates = `<form id="application-date-form" class="application-date-controls">
+    <label>From<input type="date" name="start" value="${e(applicationDateRange.start)}"></label>
+    <label>To<input type="date" name="end" value="${e(applicationDateRange.end)}"></label>
+    <button class="btn btn-primary" type="submit">Apply dates</button>
+    <button class="btn btn-secondary" type="button" data-action="clear-application-dates">All dates</button>
+    <p class="error" role="alert"></p>
+  </form>`;
   const all = summary.applications;
   const shown = all
     .filter(
@@ -976,7 +1032,7 @@ function renderApplications() {
     )
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   shell(
-    `<div class="page-title"><div><div class="eyebrow">Every step forward</div><h1>My applications</h1><p>Your search, with a little more perspective.</p></div><a class="btn btn-secondary" href="#jobs">Find more jobs ${icon("arrow")}</a></div><div class="stats application-stats" aria-label="Application summary" aria-live="polite">${filterCard("All", "Total applications", summary.total)}${statuses.map(status => filterCard(status, status, summary.counts[status])).join("")}</div>${weeklyActivity}<div class="profile-layout"><section><div class="toolbar"><h2>Application history</h2><select id="application-filter" aria-label="Filter applications by status">${["All", ...statuses].map((status) => `<option ${applicationFilter === status ? "selected" : ""}>${status}</option>`).join("")}</select></div>${shown
+    `<div class="page-title"><div><div class="eyebrow">Every step forward</div><h1>My applications</h1><p>Your search, with a little more perspective.</p></div><a class="btn btn-secondary" href="#jobs">Find more jobs ${icon("arrow")}</a></div>${dates}<div class="stats application-stats application-summary" aria-label="Application summary" aria-live="polite">${filterCard("All", "Total applications", summary.total)}${statuses.map(status => filterCard(status, status, summary.counts[status])).join("")}</div>${analytics}<div class="profile-layout"><section><div class="toolbar"><h2>Application history</h2><select id="application-filter" aria-label="Filter applications by status">${["All", ...statuses].map((status) => `<option ${applicationFilter === status ? "selected" : ""}>${status}</option>`).join("")}</select></div>${shown
       .map((app) => {
         const job = db.jobs.find((j) => j.id === app.jobId);
         return `<article class="application">${logo(job)}<div class="grow"><h3><a href="#job/${job.id}">${e(job.title)}</a></h3><p>${e(job.company)} · Applied ${date(app.createdAt)}</p><div class="history">${app.history.map((item) => `${e(item.status)} · ${date(item.date)}`).join(" → ")}</div><button type="button" class="btn btn-secondary" data-action="application-notes" data-id="${e(app.id)}" style="margin-top:12px">My private notes</button> <button type="button" class="btn btn-secondary" style="margin-top:12px" data-action="view-submitted-application" data-id="${e(app.id)}">View application</button>${recruiterMessages(app)}<div class="form-actions"><button type="button" class="btn btn-primary" data-action="application-advice" data-id="${e(app.id)}">Get next-step advice ${icon("arrow")}</button></div><div class="resume-feedback-result" data-application-advice aria-live="polite"></div></div>${badge(app.status)}</article>`;
@@ -1346,6 +1402,14 @@ async function handleSubmit(form) {
     await openApplicationNotes(applicationId);
     return;
   }
+  if (form.id === "application-date-form") {
+    if (values.start && values.end && values.start > values.end) {
+      throw new Error("The start date must be on or before the end date.");
+    }
+    applicationDateRange = { start: values.start, end: values.end };
+    renderApplications();
+    return;
+  }
   if (form.id === "search-form") {
     filters.query = values.query;
     filters.location = values.location;
@@ -1594,6 +1658,18 @@ document.addEventListener("click", async (event) => {
   const button = event.target.closest("[data-action]");
   if (!button) return;
   const { action, id } = button.dataset;
+  if (action === "application-chart") {
+    if (!["bar", "line", "pie"].includes(id)) return;
+    applicationChart = id;
+    renderApplications();
+    return;
+  }
+  if (action === "clear-application-dates") {
+    applicationDateRange = { start: "", end: "" };
+    renderApplications();
+    return;
+  }
+
   if (action === "open-saved-feedback" || action === "unsave-feedback") {
     if (user()?.role !== "seeker") return;
     const key = "careerconnect:resume-feedback:" + user().id;

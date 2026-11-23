@@ -21,6 +21,7 @@ function setup() {
   vm.runInContext(between('const statuses', 'const main') +
     between('function e(', 'const uid') +
     between('function today()', 'function posted(') +
+    between('function recruiterMessages(', 'function showSubmittedApplication') +
     between('function reviewModal(', '// Resume bytes') +
     between('async function validateResumeFile', 'document.addEventListener("submit"'), scope);
   const start = source.indexOf('} else if (action === "toggle-job"');
