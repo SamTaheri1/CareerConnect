@@ -55,5 +55,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run automated tests against isolated PostgreSQL
+      - name: Check JavaScript syntax
+        run: |
+          git ls-files -z '*.js' | while IFS= read -r -d '' file; do
+            node --check "$file" || exit 1
+          done
+
+      # npm test discovers every tests/*.test.js file, including new regression tests.
+      # Node exits with a nonzero status if any test fails, which fails this CI job.
+      # Database tests use isolated PGlite data; AI tests use simulated responses.
+      - name: Verify unit and integration tests
         run: npm test
