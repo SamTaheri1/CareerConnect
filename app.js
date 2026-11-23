@@ -196,10 +196,13 @@ let applicationDateRange = { start: "", end: "" };
 let applicationChart = "bar";
 let candidateFilters = { status: "All", date: "" };
 let applicationNotes = {};
+let applicationTitleUpdates = new Map();
 
 function applicationStatusSections(items = []) {
   const own = applicationSummary(db.applications, user().id).applications;
   const seen = seenNotifications(user().id + ":application-submenus");
+  const seenTitles = seenNotifications(user().id + ":application-titles");
+  applicationTitleUpdates = new Map();
   return `<section class="panel notification-statuses" aria-label="Applications by status">
     <h2>Applications by status</h2>
     ${statuses.map(status => {
@@ -211,8 +214,11 @@ function applicationStatusSections(items = []) {
         <summary><strong>${e(status)} (${entries.length})</strong>${updates.length ? '<span class="application-update-dot" role="img" aria-label="Unread application updates"></span>' : ""}</summary>
         ${entries.length ? entries.map(application => {
           const job = db.jobs.find(item => item.id === application.jobId);
+          const titleUpdates = items.filter(item => !item.readAt && !seenTitles.has(item.id)
+            && item.applicationId === application.id).map(item => item.id);
+          applicationTitleUpdates.set(application.id, titleUpdates);
           return `<div class="application">
-            <div class="grow"><h3><button type="button" class="btn btn-text" data-action="view-submitted-application" data-id="${e(application.id)}">${e(job?.title || "Job posting")}</button></h3><p>${e(job?.company)} · Applied ${date(application.createdAt)}</p></div>
+            <div class="grow"><h3><button type="button" class="btn btn-text" data-action="view-submitted-application" data-id="${e(application.id)}">${e(job?.title || "Job posting")}</button>${titleUpdates.length ? `<span class="application-title-dot application-update-dot" data-application-id="${e(application.id)}" role="img" aria-label="Unread update for ${e(job?.title || "Job posting")}"></span>` : ""}</h3><p>${e(job?.company)} · Applied ${date(application.createdAt)}</p></div>
             <button type="button" class="btn btn-secondary" data-action="view-submitted-application" data-id="${e(application.id)}">View application</button>
           </div>`;
         }).join("") : '<p class="hint">No applications with this status.</p>'}
@@ -253,6 +259,19 @@ function showSubmittedApplication(id) {
     <ul>${application.history.map(item => `<li>${e(item.status)} · ${date(item.date)}</li>`).join("")}</ul>
     <div class="form-actions"><button type="button" class="btn btn-secondary" data-action="download-submitted-application" data-id="${e(id)}">Download submitted resume</button></div>`);
   modal.classList.add("submitted-application-modal");
+  const updates = applicationTitleUpdates.get(id) || [];
+  if (updates.length) {
+    const key = person.id + ":application-titles";
+    const seen = seenNotifications(key);
+    for (const update of updates) seen.add(update);
+    try {
+      localStorage.setItem(notificationHistoryKey(key), JSON.stringify([...seen]));
+    } catch { /* Keep the seen state until the page is closed. */ }
+    for (const dot of document.querySelectorAll(".application-title-dot")) {
+      if (dot.dataset.applicationId === id) dot.remove();
+    }
+    applicationTitleUpdates.delete(id);
+  }
 }
 
 async function renderNotifications() {
@@ -280,7 +299,7 @@ async function renderNotifications() {
       );
     }
 
-    const state = user()?.role === "seeker" ? await requestData("/state") : null;
+    const state = await requestData("/state");
 
     if (
       location.hash !== "#notifications" ||
@@ -315,6 +334,7 @@ async function renderNotifications() {
 
               <div class="grow">
                 <h3>${e(n.title)}</h3>
+                ${n.jobId ? `<p class="notification-job-title"><a href="#job/${e(n.jobId)}">${e(db.jobs.find(job => job.id === n.jobId)?.title || "View job")}</a>${!n.readAt ? '<span class="application-update-dot" role="img" aria-label="Unread job update"></span>' : ""}</p>` : ""}
                 <p>${e(n.message)}</p>
 
                 <p class="small muted">
@@ -380,7 +400,7 @@ document.addEventListener("toggle", event => {
   try {
     localStorage.setItem(notificationHistoryKey(key), JSON.stringify([...seen]));
   } catch { /* Retain the in-memory history if storage is unavailable. */ }
-  section.querySelector(".application-update-dot")?.remove();
+  section.querySelector("summary > .application-update-dot")?.remove();
 }, true);
 
 function notificationHistoryKey(accountId) {
@@ -1046,7 +1066,7 @@ function renderApplications() {
         ? "Choose another status to see your applications."
         : "Find a role you like and send your first application.",
     )
-    } </section><aside class="panel"><h2>On your radar</h2>${deadlineList(db.jobs.filter((job) => user().saved.includes(job.id) && !all.some((app) => app.jobId === job.id)))}<section id="saved-application-advice"></section></aside></div>`,
+    } </section><aside class="panel application-radar"><h2>On your radar</h2>${deadlineList(db.jobs.filter((job) => user().saved.includes(job.id) && !all.some((app) => app.jobId === job.id)))}<section id="saved-application-advice"></section></aside></div>`,
   );
   renderSavedApplicationAdvice();
   restoreAiProgress();

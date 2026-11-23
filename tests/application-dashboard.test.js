@@ -102,6 +102,7 @@ function dashboardFixture() {
   };
   const scope = vm.createContext({
     seenNotifications: () => new Set(),
+    applicationTitleUpdates: new Map(),
     db: { applications, jobs }, user: () => person, applicationFilter: "All", applicationDateRange: { start: "", end: "" }, applicationChart: "bar",
     shell: html => { views.page = html; },
     openModal: html => { views.modal = html; }, modal,
@@ -207,7 +208,10 @@ test("opening a submenu removes its dot and remembers only that submenu's update
     open: false,
     matches: selector => selector === "details[data-application-updates]",
     dataset: { accountId: "seeker-1", applicationUpdates: '["offer-update"]' },
-    querySelector: () => ({ remove() { removed = true; } }),
+    querySelector: selector => {
+      assert.equal(selector, "summary > .application-update-dot");
+      return { remove() { removed = true; } };
+    },
   };
   page.toggle(section);
   assert.equal(removed, false);
@@ -261,4 +265,31 @@ test("date range rejects reversed dates without changing active filters", async 
   vm.runInContext(source.slice(start, end) + "}", scope);
   await assert.rejects(scope.handleSubmit({ id: "application-date-form" }), /start date/);
   assert.equal(scope.applicationDateRange.start, "");
+});
+
+test("job title dot survives opening the group and clears only when that application opens", () => {
+  const { scope } = dashboardFixture();
+  const histories = new Map();
+  const storage = new Map();
+  scope.seenNotifications = key => {
+    if (!histories.has(key)) histories.set(key, new Set());
+    return histories.get(key);
+  };
+  scope.notificationHistoryKey = key => key;
+  scope.localStorage = { setItem: (key, value) => storage.set(key, value) };
+  let removed = 0;
+  scope.document.querySelectorAll = () => [
+    { dataset: { applicationId: "offered" }, remove() { removed++; } },
+    { dataset: { applicationId: "rejected" }, remove() { throw new Error("Unrelated dot removed"); } },
+  ];
+  const items = [{ id: "offer-update", applicationId: "offered" }];
+  histories.set("seeker-1:application-submenus", new Set(["offer-update"]));
+  assert.match(scope.applicationStatusSections(items), /Unread update for Design intern/);
+  scope.showSubmittedApplication("private");
+  assert.equal(removed, 0);
+  scope.showSubmittedApplication("offered");
+  assert.equal(removed, 1);
+  assert.match(storage.get("seeker-1:application-titles"), /offer-update/);
+  assert.doesNotMatch(scope.applicationStatusSections(items), /application-title-dot/);
+  assert.match(scope.applicationStatusSections([...items, { id: "new-offer", applicationId: "offered" }]), /application-title-dot/);
 });

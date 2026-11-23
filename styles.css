@@ -1575,3 +1575,16 @@ dialog.saved-advice-modal {
   .application-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .analytics-bar-row { grid-template-columns: 6rem 1fr 1.5rem; gap: 0.5rem; }
 }
+
+.application-radar {
+  align-self: start;
+  min-width: 0;
+}
+
+.notification-job-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 700;
+}
+.application-title-dot { margin-inline-start: 0.4rem; }
